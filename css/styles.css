@@ -318,6 +318,43 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .grid-serv{grid-template-columns:repeat(3,1fr)}
 }
 
+/* phones */
+@media(max-width:560px){
+  .wrap{padding:0 16px}
+  body{-webkit-tap-highlight-color:rgba(0,0,0,0)}
+  .bar-in{height:58px}
+  .logo{font-size:1.04rem}
+  .logo .mark{width:30px;height:30px}
+  .bar-actions{gap:8px}
+  .theme-toggle{width:38px;height:38px}
+  .hero{padding:34px 0 0}
+  .sun{width:200px;height:200px;top:-60px;right:-50px}
+  .hero h1{font-size:clamp(2.1rem,9vw,3rem)}
+  .hero-cta{margin-top:24px}
+  .hero-cta .btn{width:100%}
+  .trust-row{gap:8px 16px;margin-top:22px}
+  .trust-row span{font-size:.9rem}
+  .greeters-label{margin:40px 0 14px}
+  .card-person{padding:18px 16px;gap:14px}
+  .avatar{width:58px;height:58px;font-size:1.4rem}
+  .p-call{width:42px;height:42px}
+  .scroll-cue{margin-top:32px}
+  .services{padding:18px 0 56px}
+  .why,.reviews{padding:52px 0}
+  .reviews{padding-top:8px}
+  .contact{padding:56px 0}
+  .sec-head{margin-bottom:28px}
+  .card-serv{padding:22px 18px}
+  .card-why,.card-rev{padding:22px 18px}
+  .phone-line{padding:14px}
+  .pl-num{font-size:1.05rem}
+  .fab{right:14px;bottom:14px;padding:.8em 1.15em}
+}
+@media(max-width:360px){
+  .bar-call-text{display:none}
+  .trust-row span{font-size:.86rem}
+}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *{animation:none!important}
