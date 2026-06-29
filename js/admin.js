@@ -44,11 +44,12 @@
 
   $('loginForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    var ok = S.login($('li-login').value.trim(), $('li-pass').value);
-    if (ok) { $('loginErr').textContent = ''; $('loginForm').reset(); showGate(); }
-    else { $('loginErr').textContent = 'Неверный логин или пароль.'; }
+    S.login($('li-login').value.trim(), $('li-pass').value).then(function (ok) {
+      if (ok) { $('loginErr').textContent = ''; $('loginForm').reset(); showGate(); }
+      else { $('loginErr').textContent = 'Неверный логин или пароль.'; }
+    });
   });
-  $('logoutBtn').addEventListener('click', function () { S.logout(); showGate(); });
+  $('logoutBtn').addEventListener('click', function () { S.logout().then(showGate); });
 
   /* ---------------- вкладки ---------------- */
   var tabs = document.querySelectorAll('.tab');
@@ -70,7 +71,7 @@
         '<span class="li-ava">' + esc(initials(w.name)) + '</span>' +
         '<span class="li-body"><span class="li-name">' + esc(w.name) + nb + '</span>' +
         '<span class="li-meta">' + esc(w.phone || '') + '</span></span>' +
-        '<button class="btn-del" data-wi="' + i + '" type="button">Удалить</button>' +
+        '<button class="btn-del" data-wi="' + w.id + '" type="button">Удалить</button>' +
         '</div>';
     }).join('');
     $('workersList').innerHTML = html || '<p class="muted">Пока нет работников.</p>';
@@ -78,43 +79,51 @@
 
   $('workerForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    S.addWorker($('w-name').value.trim(), $('w-phone').value.trim());
-    $('workerForm').reset();
-    renderWorkers();
-    toast('Работник добавлен');
+    S.addWorker($('w-name').value.trim(), $('w-phone').value.trim()).then(function () {
+      $('workerForm').reset();
+      renderWorkers();
+      toast('Работник добавлен');
+    });
   });
   $('workersList').addEventListener('click', function (e) {
     var b = e.target.closest('[data-wi]');
     if (!b) return;
-    if (confirm('Удалить работника?')) { S.removeWorker(+b.getAttribute('data-wi')); renderWorkers(); toast('Удалено'); }
+    if (confirm('Удалить работника?')) {
+      S.removeWorker(b.getAttribute('data-wi')).then(function () { renderWorkers(); toast('Удалено'); });
+    }
   });
 
   /* ---------------- администраторы ---------------- */
   function renderAdmins() {
-    var list = S.getAdmins();
-    var html = list.map(function (a) {
-      var tag = a.primary ? '<span class="tag-primary">Главный</span>' : '';
-      var del = a.primary ? '' : '<button class="btn-del" data-al="' + esc(a.login) + '" type="button">Удалить</button>';
-      return '<div class="list-item">' +
-        '<span class="li-ava">' + esc(initials(a.login)) + '</span>' +
-        '<span class="li-body"><span class="li-name">' + esc(a.login) + tag + '</span>' +
-        '<span class="li-meta">пароль: ' + esc('•'.repeat(Math.max(4, (a.pass || '').length))) + '</span></span>' +
-        del + '</div>';
-    }).join('');
-    $('adminsList').innerHTML = html;
+    S.getAdmins().then(function (list) {
+      var html = list.map(function (a) {
+        var tag = a.primary ? '<span class="tag-primary">Главный</span>' : '';
+        var del = a.primary ? '' : '<button class="btn-del" data-al="' + esc(a.login) + '" type="button">Удалить</button>';
+        return '<div class="list-item">' +
+          '<span class="li-ava">' + esc(initials(a.login)) + '</span>' +
+          '<span class="li-body"><span class="li-name">' + esc(a.login) + tag + '</span>' +
+          '<span class="li-meta">пароль скрыт</span></span>' +
+          del + '</div>';
+      }).join('');
+      $('adminsList').innerHTML = html;
+    });
   }
 
   $('adminForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var login = $('a-login').value.trim(), pass = $('a-pass').value;
     if (!login || !pass) return;
-    if (S.addAdmin(login, pass)) { $('adminForm').reset(); $('adminErr').textContent = ''; renderAdmins(); toast('Администратор добавлен'); }
-    else { $('adminErr').textContent = 'Такой логин уже есть.'; }
+    S.addAdmin(login, pass).then(function (ok) {
+      if (ok) { $('adminForm').reset(); $('adminErr').textContent = ''; renderAdmins(); toast('Администратор добавлен'); }
+      else { $('adminErr').textContent = 'Такой логин уже есть.'; }
+    });
   });
   $('adminsList').addEventListener('click', function (e) {
     var b = e.target.closest('[data-al]');
     if (!b) return;
-    if (confirm('Удалить администратора?')) { S.removeAdmin(b.getAttribute('data-al')); renderAdmins(); toast('Удалено'); }
+    if (confirm('Удалить администратора?')) {
+      S.removeAdmin(b.getAttribute('data-al')).then(function () { renderAdmins(); toast('Удалено'); });
+    }
   });
 
   /* ---------------- карта (редактор) ---------------- */
@@ -200,17 +209,12 @@
     var workers = Array.prototype.map.call(document.querySelectorAll('#ed-workers input:checked'), function (i) { return i.value; });
     var work = $('ed-work').value.trim();
     var date = $('ed-date').value.trim();
-    if (st === 'none' && !work && !workers.length) {
-      S.setWork(editingKey, null);
-    } else {
-      S.setWork(editingKey, { status: st, workers: workers, work: work, date: date });
-    }
-    renderPlan(); closePanel(); toast('Сохранено');
+    var rec = (st === 'none' && !work && !workers.length) ? null : { status: st, workers: workers, work: work, date: date };
+    S.setWork(editingKey, rec).then(function () { renderPlan(); closePanel(); toast('Сохранено'); });
   }
 
   function resetEditor() {
-    S.setWork(editingKey, null);
-    renderPlan(); closePanel(); toast('Сброшено');
+    S.setWork(editingKey, null).then(function () { renderPlan(); closePanel(); toast('Сброшено'); });
   }
 
   function closePanel() {
@@ -233,5 +237,5 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePanel(); });
 
   /* ---------------- старт ---------------- */
-  showGate();
+  S.ready(showGate);
 })();

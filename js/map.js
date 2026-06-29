@@ -70,7 +70,7 @@
     wrap.innerHTML = svg;
   }
 
-  build();
+  window.SNTStore.ready(build);
 
   // ---- панель информации (просмотр) ----
   var back = document.getElementById('panelBack');

@@ -1,94 +1,93 @@
 /* ============================================================
-   ХРАНИЛИЩЕ ДАННЫХ САЙТА (SNTStore)
+   КЛИЕНТ БЭКЕНДА (SNTStore)
    ------------------------------------------------------------
-   Данные хранятся в localStorage браузера. Значения по умолчанию
-   («сид») берутся из map-data.js — поэтому map-data.js нужно
-   подключать ДО store.js.
-
-   ВАЖНО: localStorage привязан к конкретному браузеру/устройству.
-   Правки администратора видны там, где он их сделал. Чтобы данные
-   были общими для всех посетителей с любых устройств, нужен бэкенд
-   (например, Firebase / Supabase) — это отдельная доработка.
+   Данные приходят с сервера (Go, REST API). Публичные данные
+   (карта, работники) кэшируются в памяти после загрузки —
+   геттеры синхронные, мутации асинхронные (возвращают Promise).
+   Используйте SNTStore.ready(cb), чтобы дождаться первой загрузки.
    ============================================================ */
 (function () {
   'use strict';
 
-  var KEYS = {
-    alleys: 'snt_alleys',
-    works: 'snt_works',
-    workers: 'snt_workers',
-    admins: 'snt_admins',
-    session: 'snt_session'
-  };
-  var WEEK = 7 * 24 * 60 * 60 * 1000;
+  var cache = { alleys: [], works: {}, workers: [], session: null };
+  var readyCbs = [];
+  var isReady = false;
 
-  function load(k, def) {
-    try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : def; }
-    catch (e) { return def; }
-  }
-  function save(k, v) {
-    try { localStorage.setItem(k, JSON.stringify(v)); return true; }
-    catch (e) { return false; }
+  function api(path, opts) {
+    opts = opts || {};
+    opts.credentials = 'same-origin';
+    if (opts.body !== undefined) {
+      opts.headers = { 'Content-Type': 'application/json' };
+      opts.body = JSON.stringify(opts.body);
+    }
+    return fetch('/api' + path, opts);
   }
 
-  var DEFAULT_WORKERS = [
-    { name: 'Ярослав', phone: '+7 967 592 58 71', addedAt: 0 },
-    { name: 'Роман',   phone: '+7 981 204 11 78', addedAt: 0 },
-    { name: 'Денис',   phone: '+7 950 029 03 98', addedAt: 0 }
-  ];
-  // Первый (главный) администратор. Логин/пароль смените после первого входа.
-  var DEFAULT_ADMINS = [{ login: 'admin', pass: 'admin', primary: true }];
+  function loadData() {
+    return api('/data').then(function (r) { return r.json(); }).then(function (d) {
+      cache.alleys = d.alleys || [];
+      cache.works = d.works || {};
+      cache.workers = d.workers || [];
+    });
+  }
+  function loadSession() {
+    return api('/session').then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (s) { cache.session = s; })
+      .catch(function () { cache.session = null; });
+  }
 
   var Store = {
-    KEYS: KEYS,
-    WEEK: WEEK,
+    WEEK: 7 * 24 * 60 * 60 * 1000,
 
-    getAlleys: function () { return load(KEYS.alleys, window.SNT_ALLEYS || []); },
-    setAlleys: function (v) { return save(KEYS.alleys, v); },
+    ready: function (cb) { if (isReady) cb(); else readyCbs.push(cb); },
+    refresh: function () { return loadData(); },
 
-    getWorks: function () { return load(KEYS.works, window.SNT_WORKS || {}); },
-    setWorks: function (v) { return save(KEYS.works, v); },
-    setWork: function (key, rec) {
-      var w = this.getWorks();
-      if (rec === null) { delete w[key]; } else { w[key] = rec; }
-      return this.setWorks(w);
-    },
-
-    getWorkers: function () { return load(KEYS.workers, DEFAULT_WORKERS); },
-    setWorkers: function (v) { return save(KEYS.workers, v); },
-    addWorker: function (name, phone) {
-      var list = this.getWorkers();
-      list.push({ name: name, phone: phone, addedAt: Date.now() });
-      return this.setWorkers(list);
-    },
-    removeWorker: function (idx) {
-      var list = this.getWorkers();
-      list.splice(idx, 1);
-      return this.setWorkers(list);
-    },
-    isNewbie: function (w) { return !!w.addedAt && (Date.now() - w.addedAt) < WEEK; },
-
-    getAdmins: function () { return load(KEYS.admins, DEFAULT_ADMINS); },
-    setAdmins: function (v) { return save(KEYS.admins, v); },
-    addAdmin: function (login, pass) {
-      var list = this.getAdmins();
-      if (list.some(function (a) { return a.login === login; })) return false;
-      list.push({ login: login, pass: pass, primary: false });
-      return this.setAdmins(list);
-    },
-    removeAdmin: function (login) {
-      var list = this.getAdmins().filter(function (a) { return !(a.login === login && !a.primary); });
-      return this.setAdmins(list);
-    },
+    getAlleys: function () { return cache.alleys; },
+    getWorks: function () { return cache.works; },
+    getWorkers: function () { return cache.workers; },
+    isNewbie: function (w) { return !!w.addedAt && (Date.now() - w.addedAt) < this.WEEK; },
+    session: function () { return cache.session; },
 
     login: function (login, pass) {
-      var a = this.getAdmins().filter(function (x) { return x.login === login && x.pass === pass; })[0];
-      if (a) { save(KEYS.session, { login: login, at: Date.now() }); return true; }
-      return false;
+      return api('/login', { method: 'POST', body: { login: login, pass: pass } })
+        .then(function (r) {
+          if (!r.ok) return false;
+          return r.json().then(function (s) { cache.session = s; return true; });
+        });
     },
-    session: function () { return load(KEYS.session, null); },
-    logout: function () { try { localStorage.removeItem(KEYS.session); } catch (e) {} }
+    logout: function () {
+      return api('/logout', { method: 'POST' }).then(function () { cache.session = null; });
+    },
+
+    getAdmins: function () {
+      return api('/admins').then(function (r) { return r.ok ? r.json() : []; });
+    },
+    addAdmin: function (login, pass) {
+      return api('/admins', { method: 'POST', body: { login: login, pass: pass } })
+        .then(function (r) { return r.ok; });
+    },
+    removeAdmin: function (login) {
+      return api('/admins/' + encodeURIComponent(login), { method: 'DELETE' })
+        .then(function (r) { return r.ok; });
+    },
+
+    addWorker: function (name, phone) {
+      return api('/workers', { method: 'POST', body: { name: name, phone: phone } })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
+    removeWorker: function (id) {
+      return api('/workers/' + encodeURIComponent(id), { method: 'DELETE' })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
+
+    setWork: function (key, rec) {
+      return api('/works', { method: 'POST', body: { key: key, rec: rec } })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    }
   };
+
+  Promise.all([loadData(), loadSession()]).then(finish, finish);
+  function finish() { isReady = true; readyCbs.forEach(function (cb) { cb(); }); readyCbs = []; }
 
   window.SNTStore = Store;
 })();
