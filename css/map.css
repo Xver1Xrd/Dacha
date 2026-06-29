@@ -1,0 +1,183 @@
+/* ===== Статусы участков (цвета для светлой/тёмной темы) ===== */
+:root{
+  --st-none:#aeb6b1;     --st-none-bg:rgba(150,163,158,.14);
+  --st-done:#2e9e54;     --st-done-bg:rgba(46,158,84,.16);
+  --st-progress:#f59e0b; --st-progress-bg:rgba(245,158,11,.18);
+  --st-planned:#8b5cf6;  --st-planned-bg:rgba(139,92,246,.18);
+}
+html[data-theme="dark"]{
+  --st-none:#7f8a85;     --st-none-bg:rgba(255,255,255,.06);
+  --st-done:#39c46a;     --st-done-bg:rgba(57,196,106,.16);
+  --st-progress:#ffb84d; --st-progress-bg:rgba(255,184,77,.16);
+  --st-planned:#a78bfa;  --st-planned-bg:rgba(167,139,250,.20);
+}
+
+/* ===== раскладка страницы ===== */
+.map-main{padding:28px 0 80px}
+.map-section{padding:72px 0 84px;background:var(--cream);border-top:1px solid var(--line-2)}
+.map-head{max-width:720px;margin-bottom:22px}
+.map-head .eyebrow{margin-bottom:14px}
+.map-head h1,.map-head h2{font-family:'Russo One',sans-serif;font-weight:400;font-size:clamp(1.7rem,4.5vw,2.6rem);line-height:1.08;margin:.3em 0 10px}
+.map-head p{color:var(--soil-soft);font-size:1.02rem;font-weight:500}
+
+/* панель инструментов: легенда + поиск */
+.map-tools{
+  display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px;
+  margin-bottom:18px;padding:14px 16px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--card);
+}
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px}
+.legend .lg{display:inline-flex;align-items:center;gap:.5em;font-size:.9rem;font-weight:600;color:var(--soil)}
+.legend .d{width:13px;height:13px;border-radius:50%;flex:none}
+.legend .d.none{background:var(--st-none)}
+.legend .d.done{background:var(--st-done)}
+.legend .d.progress{background:var(--st-progress)}
+.legend .d.planned{background:var(--st-planned)}
+.map-search{margin-left:auto;display:flex;align-items:center;gap:8px}
+.map-search input{
+  font:inherit;font-size:.95rem;padding:.5em .9em;border-radius:999px;
+  border:1px solid var(--line);background:var(--cream);color:var(--soil);width:170px;
+}
+.map-search input:focus{outline:none;border-color:var(--green)}
+.map-hint{font-size:.82rem;color:var(--soil-soft);margin:0 0 10px}
+
+/* контейнер плана (прокручивается по горизонтали на телефоне) */
+.plan-wrap{
+  border:1px solid var(--line);border-radius:var(--r);background:var(--cream-2);
+  overflow:auto;-webkit-overflow-scrolling:touch;padding:8px;
+}
+#plan{display:block;margin:0 auto;height:auto}
+
+/* участок */
+.plot{cursor:pointer}
+.plot .cell{fill:var(--card);stroke:var(--line);stroke-width:1;transition:stroke .12s ease}
+.plot[data-status="none"] .cell{fill:var(--st-none-bg)}
+.plot[data-status="done"] .cell{fill:var(--st-done-bg);stroke:rgba(46,158,84,.5)}
+.plot[data-status="progress"] .cell{fill:var(--st-progress-bg);stroke:rgba(245,158,11,.55)}
+.plot[data-status="planned"] .cell{fill:var(--st-planned-bg);stroke:rgba(139,92,246,.55)}
+.plot .dot{stroke:var(--cream-2);stroke-width:1}
+.plot[data-status="none"] .dot{fill:var(--st-none)}
+.plot[data-status="done"] .dot{fill:var(--st-done)}
+.plot[data-status="progress"] .dot{fill:var(--st-progress)}
+.plot[data-status="planned"] .dot{fill:var(--st-planned)}
+.plot .num{font-family:'Onest',sans-serif;font-weight:600;font-size:12px;fill:var(--soil);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.plot:hover .cell,.plot:focus .cell{stroke:var(--green);stroke-width:2}
+.plot:focus{outline:none}
+.plot.sel .cell{stroke:var(--green);stroke-width:2.6}
+.plot.hit .cell{stroke:var(--sun);stroke-width:2.6}
+.plot.dim{opacity:.32}
+
+.alley-label{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;letter-spacing:.04em;fill:var(--soil-soft);text-anchor:middle;text-transform:uppercase}
+.plan-title{font-family:'Russo One',sans-serif;font-size:18px;fill:var(--soil);text-anchor:middle}
+.plan-note{font-family:'JetBrains Mono',monospace;font-size:11px;fill:var(--soil-soft);text-anchor:middle}
+.zona{fill:var(--st-done-bg);stroke:rgba(46,158,84,.5)}
+
+/* ===== панель информации ===== */
+.panel-back{position:fixed;inset:0;background:rgba(0,0,0,.4);opacity:0;visibility:hidden;transition:opacity .2s ease;z-index:90}
+.panel-back.open{opacity:1;visibility:visible}
+.panel{
+  position:fixed;z-index:91;background:var(--card);border:1px solid var(--line);
+  box-shadow:var(--shadow);display:flex;flex-direction:column;
+  top:0;right:0;height:100%;width:min(380px,92vw);
+  transform:translateX(105%);transition:transform .26s cubic-bezier(.2,.7,.2,1);
+}
+.panel.open{transform:none}
+.panel-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:22px 22px 14px;border-bottom:1px solid var(--line-2)}
+.panel-h h3{font-family:'Russo One',sans-serif;font-weight:400;font-size:1.25rem;line-height:1.1}
+.panel-h .sub{font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--soil-soft);text-transform:uppercase;letter-spacing:.08em;margin-top:4px}
+.panel-close{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:transparent;color:var(--soil);cursor:pointer;display:grid;place-items:center;font-size:1.2rem;line-height:1}
+.panel-close:hover{background:var(--cream-2);border-color:var(--green)}
+.panel-body{padding:20px 22px;overflow:auto}
+.badge{display:inline-flex;align-items:center;gap:.5em;font-weight:700;font-size:.86rem;padding:.4em .85em;border-radius:999px}
+.badge .d{width:11px;height:11px;border-radius:50%}
+.badge.none{background:var(--st-none-bg);color:var(--soil-soft)} .badge.none .d{background:var(--st-none)}
+.badge.done{background:var(--st-done-bg);color:var(--st-done)} .badge.done .d{background:var(--st-done)}
+.badge.progress{background:var(--st-progress-bg);color:var(--st-progress)} .badge.progress .d{background:var(--st-progress)}
+.badge.planned{background:var(--st-planned-bg);color:var(--st-planned)} .badge.planned .d{background:var(--st-planned)}
+.panel-row{margin-top:18px}
+.panel-row .k{font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--soil-soft);margin-bottom:6px}
+.panel-row .v{font-size:1rem;font-weight:500;color:var(--soil)}
+.workers{display:flex;flex-wrap:wrap;gap:8px}
+.worker{display:inline-flex;align-items:center;gap:.5em;background:var(--cream-2);border:1px solid var(--line);border-radius:999px;padding:.35em .8em;font-weight:600;font-size:.9rem}
+.worker .ava{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--green);color:#fff;font-size:.72rem;font-family:'Russo One',sans-serif}
+.panel-empty{color:var(--soil-soft);font-weight:500}
+.panel-cta{margin-top:22px}
+.panel-cta .btn{width:100%}
+
+/* мобильный: панель снизу */
+@media(max-width:560px){
+  .map-search{margin-left:0;width:100%}
+  .map-search input{width:100%}
+  .panel{top:auto;bottom:0;right:0;left:0;width:100%;height:auto;max-height:82vh;
+    border-radius:var(--r) var(--r) 0 0;transform:translateY(105%)}
+  .panel.open{transform:none}
+}
+
+/* ============ АДМИНКА ============ */
+.bar-map{padding:.55em 1.05em;font-size:.9rem}
+@media(max-width:560px){.bar-map{display:none}}
+.foot-admin{font-size:.82rem;color:var(--soil-soft);border-bottom:1px dashed var(--line);padding-bottom:1px}
+.foot-admin:hover{color:var(--green)}
+
+.admin-main{padding:34px 0 90px;min-height:60vh}
+.admin-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px}
+.admin-head h1{font-family:'Russo One',sans-serif;font-weight:400;font-size:clamp(1.5rem,4vw,2.2rem)}
+.admin-sub{color:var(--soil-soft);margin-bottom:24px;font-weight:500}
+.admin-note{background:var(--st-progress-bg);border:1px solid rgba(245,158,11,.4);border-radius:var(--r-sm);padding:12px 16px;font-size:.9rem;color:var(--soil);margin-bottom:24px}
+
+/* вход */
+.login-card{max-width:380px;margin:8vh auto 0;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:30px 26px;box-shadow:var(--shadow-sm)}
+.login-card h1{font-family:'Russo One',sans-serif;font-weight:400;font-size:1.5rem;margin-bottom:6px}
+.login-card p{color:var(--soil-soft);font-size:.9rem;margin-bottom:20px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:.8rem;font-weight:600;color:var(--soil-soft);margin-bottom:6px}
+.field input,.field select,.field textarea{
+  width:100%;font:inherit;font-size:.98rem;padding:.7em .9em;border-radius:var(--r-sm);
+  border:1px solid var(--line);background:var(--cream);color:var(--soil);
+}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--green)}
+.field textarea{min-height:80px;resize:vertical}
+.login-err{color:#d23b3b;font-size:.88rem;margin-bottom:12px;min-height:1.2em}
+
+/* вкладки */
+.tabs{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--line);margin-bottom:24px}
+.tab{padding:.7em 1.1em;border:none;background:transparent;cursor:pointer;font:inherit;font-weight:600;color:var(--soil-soft);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--soil)}
+.tab.on{color:var(--green-d);border-bottom-color:var(--green)}
+html[data-theme="dark"] .tab.on{color:var(--lime);border-bottom-color:var(--lime)}
+.tabpane{display:none}
+.tabpane.on{display:block}
+
+.adm-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-bottom:20px;box-shadow:var(--shadow-sm)}
+.adm-card h2{font-family:'Onest',sans-serif;font-weight:800;font-size:1.12rem;margin-bottom:16px}
+.row-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.row-form .field{margin-bottom:0;flex:1;min-width:140px}
+
+/* списки работников/админов */
+.list{display:flex;flex-direction:column;gap:10px}
+.list-item{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--cream)}
+.list-item .li-ava{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;background:var(--green);color:#fff;font-family:'Russo One',sans-serif}
+.list-item .li-body{flex:1;min-width:0}
+.list-item .li-name{font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.list-item .li-meta{font-size:.86rem;color:var(--soil-soft);font-family:'JetBrains Mono',monospace}
+.tag-new{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--st-progress);color:#3a2600;padding:.25em .6em;border-radius:999px}
+.tag-primary{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:var(--st-planned-bg);color:var(--st-planned);padding:.25em .6em;border-radius:999px}
+.btn-del{flex:none;border:1px solid var(--line);background:transparent;color:#d23b3b;border-radius:999px;padding:.5em .9em;cursor:pointer;font:inherit;font-size:.85rem;font-weight:600}
+.btn-del:hover{background:rgba(210,59,59,.1);border-color:#d23b3b}
+
+.btn-sm{padding:.6em 1.1em;font-size:.92rem}
+.muted{color:var(--soil-soft);font-size:.9rem}
+
+/* выбор статуса в редакторе участка */
+.status-pick{display:flex;flex-wrap:wrap;gap:8px}
+.status-pick label{display:inline-flex;align-items:center;gap:.5em;padding:.5em .9em;border:1px solid var(--line);border-radius:999px;cursor:pointer;font-weight:600;font-size:.9rem}
+.status-pick input{position:absolute;opacity:0;pointer-events:none}
+.status-pick .d{width:12px;height:12px;border-radius:50%}
+.status-pick label:has(input:checked){border-color:var(--green);background:var(--cream-2)}
+.workers-pick{display:flex;flex-wrap:wrap;gap:8px}
+.workers-pick label{display:inline-flex;align-items:center;gap:.5em;padding:.45em .85em;border:1px solid var(--line);border-radius:999px;cursor:pointer;font-weight:600;font-size:.9rem}
+.workers-pick label:has(input:checked){border-color:var(--green);background:var(--cream-2)}
+.workers-pick input{accent-color:var(--green)}
+
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--green);color:#fff;padding:.8em 1.4em;border-radius:999px;font-weight:600;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease;z-index:95}
+.toast.show{opacity:1;transform:translateX(-50%)}

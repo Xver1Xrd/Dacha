@@ -18,6 +18,7 @@
 <meta name="theme-color" content="#faf6ea" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0c1410" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="css/styles.css?v=3">
+<link rel="stylesheet" href="css/map.css?v=2">
 </head>
 <body>
 
@@ -35,6 +36,7 @@
         <svg class="i-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" fill="currentColor"/></svg>
         <svg class="i-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></g></svg>
       </button>
+      <a href="#map" class="btn btn-ghost bar-map">Карта работ</a>
       <a href="#contacts" class="btn btn-sun">
         <svg viewBox="0 0 24 24" fill="none"><path d="M6.6 10.8a15 15 0 006.6 6.6l2.2-2.2a1 1 0 011-.24 11.4 11.4 0 003.6.58 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.46.58 3.6a1 1 0 01-.24 1l-2.24 2.2z" fill="currentColor"/></svg>
         <span class="bar-call-text">Позвонить</span>
@@ -288,6 +290,47 @@
   </div>
 </section>
 
+<!-- ============ MAP ============ -->
+<section class="map-section" id="map">
+  <div class="wrap">
+    <div class="map-head reveal">
+      <span class="eyebrow">Карта</span>
+      <h2>Карта работ на участках</h2>
+      <p>Наглядно видно, где работы уже завершены, где идут сейчас и что запланировано. Нажмите на участок — покажем, кто работал и что делал.</p>
+    </div>
+
+    <div class="map-tools reveal">
+      <div class="legend">
+        <span class="lg"><span class="d none"></span> Не работали</span>
+        <span class="lg"><span class="d done"></span> Завершено</span>
+        <span class="lg"><span class="d progress"></span> В работе</span>
+        <span class="lg"><span class="d planned"></span> Запланировано</span>
+      </div>
+      <div class="map-search">
+        <label for="plotSearch" class="lg">Найти №</label>
+        <input id="plotSearch" type="number" inputmode="numeric" min="1" placeholder="например, 7" aria-label="Поиск участка по номеру">
+      </div>
+    </div>
+
+    <p class="map-hint">↔ На телефоне карту можно прокручивать вбок. Цвет точки = статус работ.</p>
+
+    <div id="plan-wrap" class="plan-wrap"></div>
+  </div>
+</section>
+
+<!-- панель информации об участке -->
+<div id="panelBack" class="panel-back"></div>
+<aside id="panel" class="panel" aria-live="polite">
+  <div class="panel-h">
+    <div>
+      <h3 id="pTitle">Участок</h3>
+      <div class="sub" id="pSub"></div>
+    </div>
+    <button id="panelClose" class="panel-close" type="button" aria-label="Закрыть">×</button>
+  </div>
+  <div class="panel-body" id="pBody"></div>
+</aside>
+
 <!-- ============ FOOTER ============ -->
 <footer class="foot">
   <div class="wrap foot-in">
@@ -296,6 +339,7 @@
       <span>Участок<small>работа по СНТ</small></span>
     </a>
     <p>Помощь на участке в СНТ «Михайловское»: покос травы, уборка мусора, перекопка земли и щебня, чистка канав, спил мелких деревьев и прочие работы.</p>
+    <a href="admin.html" class="foot-admin">Вход для администратора</a>
   </div>
 </footer>
 
@@ -306,5 +350,8 @@
 </a>
 
 <script src="js/main.js?v=3" defer></script>
+<script src="js/map-data.js?v=2" defer></script>
+<script src="js/store.js?v=2" defer></script>
+<script src="js/map.js?v=2" defer></script>
 </body>
 </html>

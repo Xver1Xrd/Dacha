@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+(function(){try{var t=localStorage.getItem('theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();
+</script>
+<title>Админпанель — СНТ «Михайловское»</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#faf6ea" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1410" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231e8043'/><path d='M28 54l14 14 30-34' fill='none' stroke='%23faf6ea' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Onest:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=3">
+<link rel="stylesheet" href="css/map.css?v=2">
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <a href="index.html" class="logo">
+      <span class="mark"><svg viewBox="0 0 100 100" fill="none"><path d="M28 54l14 14 30-34" stroke="#faf6ea" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span>Участок<small>админпанель</small></span>
+    </a>
+    <div class="bar-actions">
+      <button id="themeBtn" class="theme-toggle" type="button" aria-label="Переключить тему">
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" fill="currentColor"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></g></svg>
+      </button>
+      <a href="index.html" class="btn btn-ghost bar-map">На сайт</a>
+    </div>
+  </div>
+</header>
+
+<main class="admin-main">
+  <div class="wrap">
+
+    <!-- ВХОД -->
+    <div id="loginView">
+      <form class="login-card" id="loginForm">
+        <h1>Вход в админпанель</h1>
+        <p>Управление картой, работниками и администраторами.</p>
+        <div class="login-err" id="loginErr"></div>
+        <div class="field"><label for="li-login">Логин</label><input id="li-login" autocomplete="username" required></div>
+        <div class="field"><label for="li-pass">Пароль</label><input id="li-pass" type="password" autocomplete="current-password" required></div>
+        <button class="btn btn-sun" type="submit" style="width:100%">Войти</button>
+        <p class="muted" style="margin-top:14px">По умолчанию логин <b>admin</b>, пароль <b>admin</b> — смените после входа во вкладке «Администраторы».</p>
+      </form>
+    </div>
+
+    <!-- ПАНЕЛЬ -->
+    <div id="adminView" style="display:none">
+      <div class="admin-head">
+        <h1>Админпанель</h1>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="muted">Вы вошли как <b id="whoami"></b></span>
+          <button class="btn btn-ghost btn-sm" id="logoutBtn" type="button">Выйти</button>
+        </div>
+      </div>
+      <p class="admin-sub">СНТ «Михайловское»</p>
+      <div class="admin-note">⚠ Данные сохраняются в этом браузере (localStorage). Чтобы карта и списки были общими для всех посетителей с любых устройств, нужен бэкенд (например, Firebase/Supabase) — это отдельная доработка.</div>
+
+      <div class="tabs">
+        <button class="tab on" data-tab="map" type="button">Карта</button>
+        <button class="tab" data-tab="workers" type="button">Работники</button>
+        <button class="tab" data-tab="admins" type="button">Администраторы</button>
+      </div>
+
+      <!-- КАРТА -->
+      <section class="tabpane on" id="pane-map">
+        <div class="adm-card">
+          <h2>Редактирование карты</h2>
+          <div class="legend" style="margin-bottom:14px">
+            <span class="lg"><span class="d none"></span> Не работали</span>
+            <span class="lg"><span class="d done"></span> Завершено</span>
+            <span class="lg"><span class="d progress"></span> В работе</span>
+            <span class="lg"><span class="d planned"></span> Запланировано</span>
+          </div>
+          <p class="muted" style="margin-bottom:12px">Нажмите на участок, чтобы изменить статус и информацию о работах.</p>
+          <div id="plan-wrap" class="plan-wrap"></div>
+        </div>
+      </section>
+
+      <!-- РАБОТНИКИ -->
+      <section class="tabpane" id="pane-workers">
+        <div class="adm-card">
+          <h2>Добавить работника</h2>
+          <form class="row-form" id="workerForm">
+            <div class="field"><label for="w-name">Имя</label><input id="w-name" required></div>
+            <div class="field"><label for="w-phone">Номер телефона</label><input id="w-phone" inputmode="tel" placeholder="+7 ..." required></div>
+            <button class="btn btn-sun btn-sm" type="submit">Добавить</button>
+          </form>
+          <p class="muted" style="margin-top:10px">Первую неделю у нового работника будет плашка «Новичок».</p>
+        </div>
+        <div class="adm-card">
+          <h2>Работники</h2>
+          <div class="list" id="workersList"></div>
+        </div>
+      </section>
+
+      <!-- АДМИНИСТРАТОРЫ -->
+      <section class="tabpane" id="pane-admins">
+        <div class="adm-card">
+          <h2>Добавить администратора</h2>
+          <form class="row-form" id="adminForm">
+            <div class="field"><label for="a-login">Логин</label><input id="a-login" autocomplete="off" required></div>
+            <div class="field"><label for="a-pass">Пароль</label><input id="a-pass" autocomplete="off" required></div>
+            <button class="btn btn-sun btn-sm" type="submit">Добавить</button>
+          </form>
+          <div class="login-err" id="adminErr" style="margin-top:8px"></div>
+        </div>
+        <div class="adm-card">
+          <h2>Администраторы</h2>
+          <div class="list" id="adminsList"></div>
+          <p class="muted" style="margin-top:12px">Главного администратора удалить нельзя.</p>
+        </div>
+      </section>
+    </div>
+
+  </div>
+</main>
+
+<!-- панель редактирования участка -->
+<div id="panelBack" class="panel-back"></div>
+<aside id="panel" class="panel" aria-live="polite">
+  <div class="panel-h">
+    <div>
+      <h3 id="pTitle">Участок</h3>
+      <div class="sub" id="pSub"></div>
+    </div>
+    <button id="panelClose" class="panel-close" type="button" aria-label="Закрыть">×</button>
+  </div>
+  <div class="panel-body" id="pBody"></div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/main.js?v=3" defer></script>
+<script src="js/map-data.js?v=2" defer></script>
+<script src="js/store.js?v=2" defer></script>
+<script src="js/admin.js?v=2" defer></script>
+</body>
+</html>
