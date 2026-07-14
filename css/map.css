@@ -126,9 +126,15 @@ html[data-theme="dark"]{
 .admin-note{background:var(--st-progress-bg);border:1px solid rgba(245,158,11,.4);border-radius:var(--r-sm);padding:12px 16px;font-size:.9rem;color:var(--soil);margin-bottom:24px}
 
 /* вход */
-.login-card{max-width:380px;margin:8vh auto 0;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:30px 26px;box-shadow:var(--shadow-sm)}
-.login-card h1{font-family:'Russo One',sans-serif;font-weight:400;font-size:1.5rem;margin-bottom:6px}
-.login-card p{color:var(--soil-soft);font-size:.9rem;margin-bottom:20px}
+.login-view{min-height:62vh;display:flex;align-items:center;justify-content:center}
+.login-card{max-width:380px;width:100%;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:34px 26px;box-shadow:var(--shadow)}
+.login-icon{
+  width:52px;height:52px;border-radius:14px;background:var(--green);color:#fff;
+  display:grid;place-items:center;margin:0 auto 18px;box-shadow:var(--shadow-sm);
+}
+.login-icon svg{width:26px;height:26px}
+.login-card h1{font-family:'Russo One',sans-serif;font-weight:400;font-size:1.5rem;margin-bottom:6px;text-align:center}
+.login-card p{color:var(--soil-soft);font-size:.9rem;margin-bottom:20px;text-align:center}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:.8rem;font-weight:600;color:var(--soil-soft);margin-bottom:6px}
 .field input,.field select,.field textarea{
@@ -150,8 +156,9 @@ html[data-theme="dark"] .tab.on{color:var(--lime);border-bottom-color:var(--lime
 
 .adm-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-bottom:20px;box-shadow:var(--shadow-sm)}
 .adm-card h2{font-family:'Onest',sans-serif;font-weight:800;font-size:1.12rem;margin-bottom:16px}
-.row-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.row-form{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
 .row-form .field{margin-bottom:0;flex:1;min-width:140px}
+.row-form>button{align-self:flex-end}
 
 /* списки работников/админов */
 .list{display:flex;flex-direction:column;gap:10px}
