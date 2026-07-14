@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  var cache = { alleys: [], works: {}, workers: [], session: null };
+  var cache = { alleys: [], works: {}, workers: [], reviews: [], session: null };
   var readyCbs = [];
   var isReady = false;
 
@@ -28,6 +28,7 @@
       cache.alleys = d.alleys || [];
       cache.works = d.works || {};
       cache.workers = d.workers || [];
+      cache.reviews = d.reviews || [];
     });
   }
   function loadSession() {
@@ -45,6 +46,7 @@
     getAlleys: function () { return cache.alleys; },
     getWorks: function () { return cache.works; },
     getWorkers: function () { return cache.workers; },
+    getReviews: function () { return cache.reviews; },
     isNewbie: function (w) { return !!w.addedAt && (Date.now() - w.addedAt) < this.WEEK; },
     session: function () { return cache.session; },
 
@@ -62,8 +64,8 @@
     getAdmins: function () {
       return api('/admins').then(function (r) { return r.ok ? r.json() : []; });
     },
-    addAdmin: function (login, pass) {
-      return api('/admins', { method: 'POST', body: { login: login, pass: pass } })
+    addAdmin: function (login, pass, perms) {
+      return api('/admins', { method: 'POST', body: { login: login, pass: pass, perms: perms || {} } })
         .then(function (r) { return r.ok; });
     },
     removeAdmin: function (login) {
@@ -71,18 +73,36 @@
         .then(function (r) { return r.ok; });
     },
 
-    addWorker: function (name, phone) {
-      return api('/workers', { method: 'POST', body: { name: name, phone: phone } })
+    addWorker: function (name, phone, telegram) {
+      return api('/workers', { method: 'POST', body: { name: name, phone: phone, telegram: telegram } })
         .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
     },
     removeWorker: function (id) {
       return api('/workers/' + encodeURIComponent(id), { method: 'DELETE' })
         .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
     },
+    editWorker: function (id, name, phone, telegram) {
+      return api('/workers/' + encodeURIComponent(id), { method: 'PUT', body: { name: name, phone: phone, telegram: telegram } })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
 
     setWork: function (key, rec) {
       return api('/works', { method: 'POST', body: { key: key, rec: rec } })
         .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
+
+    addReview: function (name, text, stars, color) {
+      return api('/reviews', { method: 'POST', body: { name: name, text: text, stars: stars || 5, color: color || '' } })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
+    removeReview: function (id) {
+      return api('/reviews/' + encodeURIComponent(id), { method: 'DELETE' })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
+    editReview: function (id, name, text, stars, color) {
+      return api('/reviews/' + encodeURIComponent(id), { method: 'PUT', body: { name: name, text: text, stars: stars, color: color || '' } })
+        .then(function (r) { return r.ok; })
+        .then(function (ok) { return loadData().then(function () { return ok; }); });
     }
   };
 

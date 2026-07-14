@@ -161,6 +161,12 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
 }
 .p-phone svg{width:1.05em;height:1.05em;flex:none}
 .card-person:hover .p-phone{color:var(--green)}
+.p-tg{
+  display:inline-flex;align-items:center;gap:.45em;margin-top:5px;
+  font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.9rem;color:#229ed9;
+}
+.p-tg svg{width:1em;height:1em;flex:none}
+.p-tg:hover{color:var(--green)}
 .p-call{
   margin-left:auto;flex:none;align-self:center;
   width:46px;height:46px;border-radius:50%;background:var(--sun);color:var(--soil);
@@ -231,7 +237,24 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
 /* ---------- REVIEWS ---------- */
 .reviews{padding:14px 0 78px;background:var(--cream)}
 .reviews .sec-head{margin-bottom:34px}
-.grid-rev{display:grid;grid-template-columns:1fr;gap:18px}
+.reviews-carousel{position:relative;overflow:hidden;max-width:600px;margin:0 auto;padding:0 48px}
+.carousel-track{display:flex;transition:transform .45s cubic-bezier(.25,.46,.45,.94);will-change:transform}
+.carousel-slide{flex:none;width:100%;box-sizing:border-box}
+.carousel-btn{
+  position:absolute;top:50%;transform:translateY(-50%);z-index:2;
+  width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);
+  color:var(--soil);font-size:1.2rem;cursor:pointer;display:grid;place-items:center;
+  transition:background .15s,box-shadow .15s;box-shadow:var(--shadow-sm);
+}
+.carousel-btn:hover{background:var(--cream);box-shadow:var(--shadow-md)}
+.carousel-prev{left:0}
+.carousel-next{right:0}
+.carousel-dots{display:flex;justify-content:center;gap:8px;margin-top:20px}
+.carousel-dot{
+  width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line);background:transparent;
+  cursor:pointer;padding:0;transition:background .2s,transform .2s;
+}
+.carousel-dot.active{background:var(--green);border-color:var(--green);transform:scale(1.3)}
 .card-rev{
   background:var(--card);border:1px solid var(--line);border-radius:var(--r);
   padding:26px 24px;box-shadow:var(--shadow-sm);position:relative;
@@ -265,8 +288,12 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
 .phone-line .pl-body{flex:1;min-width:0}
 .phone-line .pl-name{font-weight:700;font-size:.92rem;color:rgba(255,255,255,.8)}
 .phone-line .pl-num{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.18rem;color:#fff;margin-top:1px}
-.phone-line .pl-call{flex:none;width:46px;height:46px;border-radius:50%;background:var(--sun);color:var(--soil);display:grid;place-items:center;box-shadow:0 8px 18px -8px rgba(255,178,0,.9)}
-.phone-line .pl-call svg{width:20px;height:20px}
+.phone-line .pl-actions{display:flex;gap:8px;flex:none}
+.phone-line .pl-call,.phone-line .pl-tg{width:46px;height:46px;border-radius:50%;display:grid;place-items:center}
+.phone-line .pl-call{background:var(--sun);color:var(--soil);box-shadow:0 8px 18px -8px rgba(255,178,0,.9)}
+.phone-line .pl-call svg,.phone-line .pl-tg svg{width:20px;height:20px}
+.phone-line .pl-tg{background:#229ed9;color:#fff;box-shadow:0 8px 18px -8px rgba(34,158,217,.9)}
+.phone-line .pl-tg:hover{background:#1b8ac0}
 .contact-note{margin-top:24px;font-size:.92rem;color:rgba(255,255,255,.7);font-weight:500}
 
 /* ---------- footer ---------- */
@@ -302,7 +329,6 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .greeters .card-person:first-child{grid-column:1/-1}
   .grid-serv{grid-template-columns:1fr 1fr}
   .grid-why{grid-template-columns:1fr 1fr 1fr}
-  .grid-rev{grid-template-columns:1fr 1fr}
   .phones{grid-template-columns:1fr}
 }
 @media(min-width:900px){
@@ -310,7 +336,6 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .greeters{grid-template-columns:1fr 1fr 1fr}
   .greeters .card-person:first-child{grid-column:auto}
   .grid-serv{grid-template-columns:1fr 1fr 1fr}
-  .grid-rev{grid-template-columns:1fr 1fr}
   .bar-call-text{display:inline}
   .fab{display:none}
 }
@@ -342,6 +367,7 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .services{padding:18px 0 56px}
   .why,.reviews{padding:52px 0}
   .reviews{padding-top:8px}
+  .reviews-carousel{padding:0 36px}
   .contact{padding:56px 0}
   .sec-head{margin-bottom:28px}
   .card-serv{padding:22px 18px}

@@ -1,4 +1,3 @@
-/* Админпанель: вход, работники, администраторы, редактор карты. */
 (function () {
   'use strict';
   var S = window.SNTStore;
@@ -26,6 +25,8 @@
     { id: 'planned', label: 'Запланировано' }
   ];
 
+  var editingWorkerId = null;
+
   /* ---------------- вход ---------------- */
   var loginView = $('loginView'), adminView = $('adminView');
 
@@ -35,7 +36,7 @@
       loginView.style.display = 'none';
       adminView.style.display = '';
       $('whoami').textContent = sess.login;
-      renderWorkers(); renderAdmins(); renderPlan();
+      renderWorkers(); renderAdmins(); renderPlan(); renderReviews();
     } else {
       loginView.style.display = '';
       adminView.style.display = 'none';
@@ -65,13 +66,16 @@
   /* ---------------- работники ---------------- */
   function renderWorkers() {
     var list = S.getWorkers();
-    var html = list.map(function (w, i) {
+    var html = list.map(function (w) {
       var nb = S.isNewbie(w) ? '<span class="tag-new">Новичок</span>' : '';
+      var tg = w.telegram ? (' · <a href="' + esc(w.telegram) + '" target="_blank" rel="noopener" style="color:#229ed9">Telegram</a>') : '';
       return '<div class="list-item">' +
         '<span class="li-ava">' + esc(initials(w.name)) + '</span>' +
         '<span class="li-body"><span class="li-name">' + esc(w.name) + nb + '</span>' +
-        '<span class="li-meta">' + esc(w.phone || '') + '</span></span>' +
-        '<button class="btn-del" data-wi="' + w.id + '" type="button">Удалить</button>' +
+        '<span class="li-meta">' + esc(w.phone || '') + tg + '</span></span>' +
+        '<div class="list-actions">' +
+        '<button class="btn-edit" data-we="' + w.id + '" type="button">✎</button>' +
+        '<button class="btn-del" data-wi="' + w.id + '" type="button">Удалить</button></div>' +
         '</div>';
     }).join('');
     $('workersList').innerHTML = html || '<p class="muted">Пока нет работников.</p>';
@@ -79,29 +83,57 @@
 
   $('workerForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    S.addWorker($('w-name').value.trim(), $('w-phone').value.trim()).then(function () {
-      $('workerForm').reset();
-      renderWorkers();
-      toast('Работник добавлен');
-    });
+    if (editingWorkerId) {
+      S.editWorker(editingWorkerId, $('w-name').value.trim(), $('w-phone').value.trim(), $('w-tg').value.trim()).then(function () {
+        $('workerForm').reset(); editingWorkerId = null;
+        $('workerForm').querySelector('button[type="submit"]').textContent = 'Добавить';
+        renderWorkers(); toast('Сохранено');
+      });
+    } else {
+      S.addWorker($('w-name').value.trim(), $('w-phone').value.trim(), $('w-tg').value.trim()).then(function () {
+        $('workerForm').reset(); renderWorkers(); toast('Работник добавлен');
+      });
+    }
   });
+
   $('workersList').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-wi]');
-    if (!b) return;
-    if (confirm('Удалить работника?')) {
-      S.removeWorker(b.getAttribute('data-wi')).then(function () { renderWorkers(); toast('Удалено'); });
+    var del = e.target.closest('[data-wi]');
+    if (del) {
+      if (confirm('Удалить работника?')) {
+        S.removeWorker(del.getAttribute('data-wi')).then(function () { renderWorkers(); toast('Удалено'); });
+      }
+      return;
+    }
+    var edit = e.target.closest('[data-we]');
+    if (edit) {
+      var id = edit.getAttribute('data-we');
+      var workers = S.getWorkers();
+      var w = workers.filter(function (x) { return x.id == id; })[0];
+      if (!w) return;
+      $('w-name').value = w.name;
+      $('w-phone').value = w.phone || '';
+      $('w-tg').value = w.telegram || '';
+      editingWorkerId = id;
+      $('workerForm').querySelector('button[type="submit"]').textContent = 'Сохранить';
+      $('w-name').focus();
     }
   });
 
   /* ---------------- администраторы ---------------- */
+  function renderPermBadge(p) {
+    var m = []; if (p.map) m.push('К'); if (p.workers) m.push('Р'); if (p.admins) m.push('А'); if (p.reviews) m.push('О');
+    return m.length ? '<span class="tag-perms">' + m.join('') + '</span>' : '';
+  }
+
   function renderAdmins() {
     S.getAdmins().then(function (list) {
       var html = list.map(function (a) {
         var tag = a.primary ? '<span class="tag-primary">Главный</span>' : '';
+        var perms = a.primary ? '' : renderPermBadge(a.perms || {});
         var del = a.primary ? '' : '<button class="btn-del" data-al="' + esc(a.login) + '" type="button">Удалить</button>';
         return '<div class="list-item">' +
           '<span class="li-ava">' + esc(initials(a.login)) + '</span>' +
-          '<span class="li-body"><span class="li-name">' + esc(a.login) + tag + '</span>' +
+          '<span class="li-body"><span class="li-name">' + esc(a.login) + tag + perms + '</span>' +
           '<span class="li-meta">пароль скрыт</span></span>' +
           del + '</div>';
       }).join('');
@@ -113,7 +145,11 @@
     e.preventDefault();
     var login = $('a-login').value.trim(), pass = $('a-pass').value;
     if (!login || !pass) return;
-    S.addAdmin(login, pass).then(function (ok) {
+    var perms = {};
+    document.querySelectorAll('#adminForm [data-perm]').forEach(function (cb) {
+      perms[cb.getAttribute('data-perm')] = cb.checked;
+    });
+    S.addAdmin(login, pass, perms).then(function (ok) {
       if (ok) { $('adminForm').reset(); $('adminErr').textContent = ''; renderAdmins(); toast('Администратор добавлен'); }
       else { $('adminErr').textContent = 'Такой логин уже есть.'; }
     });
@@ -235,6 +271,70 @@
   back.addEventListener('click', closePanel);
   $('panelClose').addEventListener('click', closePanel);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePanel(); });
+
+  /* ---------------- отзывы ---------------- */
+  var editingReviewId = null;
+
+  function renderReviews() {
+    var list = S.getReviews();
+    var html = list.map(function (r) {
+      var stars = '';
+      for (var i = 0; i < 5; i++) {
+        stars += '<svg viewBox="0 0 24 24" fill="' + (i < r.stars ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--sun)"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 16.9 5.7 21.4 8 14 2 9.4h7.6z"/></svg>';
+      }
+      var colorStyle = r.color ? 'style="background:' + r.color + '"' : '';
+      return '<div class="list-item">' +
+        '<span class="li-ava" ' + colorStyle + '>' + esc(initials(r.name)) + '</span>' +
+        '<span class="li-body"><span class="li-name">' + esc(r.name) + '</span>' +
+        '<span class="li-meta">' + stars + '</span>' +
+        '<span class="li-text" style="font-size:.85rem;color:var(--soil-soft);margin-top:4px;display:block;line-height:1.3">' + esc(r.text) + '</span></span>' +
+        '<div class="list-actions">' +
+        '<button class="btn-edit" data-re="' + r.id + '" type="button">✎</button>' +
+        '<button class="btn-del" data-ri="' + r.id + '" type="button">Удалить</button></div>' +
+        '</div>';
+    }).join('');
+    $('reviewsList').innerHTML = html || '<p class="muted">Пока нет отзывов.</p>';
+  }
+
+  $('reviewForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = $('r-name').value.trim();
+    var text = $('r-text').value.trim();
+    var stars = parseInt($('r-stars').value) || 5;
+    if (editingReviewId) {
+      S.editReview(editingReviewId, name, text, stars, '').then(function () {
+        $('reviewForm').reset(); editingReviewId = null;
+        $('reviewForm').querySelector('button[type="submit"]').textContent = 'Добавить';
+        renderReviews(); toast('Сохранено');
+      });
+    } else {
+      S.addReview(name, text, stars).then(function () {
+        $('reviewForm').reset(); renderReviews(); toast('Отзыв добавлен');
+      });
+    }
+  });
+  $('reviewsList').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-ri]');
+    if (b) {
+      if (confirm('Удалить отзыв?')) {
+        S.removeReview(b.getAttribute('data-ri')).then(function () { renderReviews(); toast('Удалено'); });
+      }
+      return;
+    }
+    var edit = e.target.closest('[data-re]');
+    if (edit) {
+      var id = edit.getAttribute('data-re');
+      var reviews = S.getReviews();
+      var r = reviews.filter(function (x) { return x.id == id; })[0];
+      if (!r) return;
+      $('r-name').value = r.name;
+      $('r-text').value = r.text;
+      $('r-stars').value = r.stars;
+      editingReviewId = id;
+      $('reviewForm').querySelector('button[type="submit"]').textContent = 'Сохранить';
+      $('r-name').focus();
+    }
+  });
 
   /* ---------------- старт ---------------- */
   S.ready(showGate);

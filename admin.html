@@ -61,12 +61,13 @@
         </div>
       </div>
       <p class="admin-sub">СНТ «Михайловское»</p>
-      <div class="admin-note">⚠ Данные сохраняются в этом браузере (localStorage). Чтобы карта и списки были общими для всех посетителей с любых устройств, нужен бэкенд (например, Firebase/Supabase) — это отдельная доработка.</div>
+      <div class="admin-note">⚠ Данные сохраняются на сервере (файл data.json). Все изменения сразу видны всем посетителям сайта.</div>
 
       <div class="tabs">
         <button class="tab on" data-tab="map" type="button">Карта</button>
         <button class="tab" data-tab="workers" type="button">Работники</button>
         <button class="tab" data-tab="admins" type="button">Администраторы</button>
+        <button class="tab" data-tab="reviews" type="button">Отзывы</button>
       </div>
 
       <!-- КАРТА -->
@@ -91,6 +92,7 @@
           <form class="row-form" id="workerForm">
             <div class="field"><label for="w-name">Имя</label><input id="w-name" required></div>
             <div class="field"><label for="w-phone">Номер телефона</label><input id="w-phone" inputmode="tel" placeholder="+7 ..." required></div>
+            <div class="field"><label for="w-tg">Telegram</label><input id="w-tg" placeholder="@username или https://t.me/..."></div>
             <button class="btn btn-sun btn-sm" type="submit">Добавить</button>
           </form>
           <p class="muted" style="margin-top:10px">Первую неделю у нового работника будет плашка «Новичок».</p>
@@ -105,9 +107,17 @@
       <section class="tabpane" id="pane-admins">
         <div class="adm-card">
           <h2>Добавить администратора</h2>
-          <form class="row-form" id="adminForm">
+          <form id="adminForm">
             <div class="field"><label for="a-login">Логин</label><input id="a-login" autocomplete="off" required></div>
             <div class="field"><label for="a-pass">Пароль</label><input id="a-pass" autocomplete="off" required></div>
+            <div class="field"><label>Права доступа</label>
+              <div class="perms-pick">
+                <label><input type="checkbox" data-perm="map" checked> Карта работ</label>
+                <label><input type="checkbox" data-perm="workers" checked> Работники</label>
+                <label><input type="checkbox" data-perm="admins"> Администраторы</label>
+                <label><input type="checkbox" data-perm="reviews" checked> Отзывы</label>
+              </div>
+            </div>
             <button class="btn btn-sun btn-sm" type="submit">Добавить</button>
           </form>
           <div class="login-err" id="adminErr" style="margin-top:8px"></div>
@@ -115,7 +125,24 @@
         <div class="adm-card">
           <h2>Администраторы</h2>
           <div class="list" id="adminsList"></div>
-          <p class="muted" style="margin-top:12px">Главного администратора удалить нельзя.</p>
+          <p class="muted" style="margin-top:12px">Главного администратора удалить нельзя. Права доступа: К — карта, Р — работники, А — администраторы, О — отзывы.</p>
+        </div>
+      </section>
+
+      <!-- ОТЗЫВЫ -->
+      <section class="tabpane" id="pane-reviews">
+        <div class="adm-card">
+          <h2>Добавить отзыв</h2>
+          <form class="row-form" id="reviewForm">
+            <div class="field"><label for="r-name">Имя</label><input id="r-name" required></div>
+            <div class="field"><label for="r-text">Текст отзыва</label><textarea id="r-text" required></textarea></div>
+            <div class="field" style="min-width:80px"><label for="r-stars">Оценка</label><select id="r-stars"><option value="5" selected>5</option><option value="4">4</option><option value="3">3</option><option value="2">2</option><option value="1">1</option></select></div>
+            <button class="btn btn-sun btn-sm" type="submit">Добавить</button>
+          </form>
+        </div>
+        <div class="adm-card">
+          <h2>Отзывы</h2>
+          <div class="list" id="reviewsList"></div>
         </div>
       </section>
     </div>
@@ -138,8 +165,8 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="js/main.js?v=3" defer></script>
 <script src="js/store.js?v=3" defer></script>
+<script src="js/main.js?v=3" defer></script>
 <script src="js/admin.js?v=3" defer></script>
 </body>
 </html>

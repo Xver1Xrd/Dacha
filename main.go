@@ -1,10 +1,11 @@
 // Бэкенд сайта СНТ «Михайловское».
 // Раздаёт статику (index.html, admin.html, css, js) и REST API.
-// Хранилище — JSON-файл data.json. Авторизация — сессии в HttpOnly-cookie,
-// пароли хешируются PBKDF2-HMAC-SHA256. Без внешних зависимостей.
+// Хранилище — PostgreSQL (DATABASE_URL) или data.json (если DATABASE_URL не задан).
+// Авторизация — сессии в HttpOnly-cookie, пароли хешируются PBKDF2-HMAC-SHA256.
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,12 +13,16 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 //go:embed index.html admin.html css js
@@ -28,10 +33,11 @@ const dataFile = "data.json"
 // ---------- модели ----------
 
 type Worker struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	Phone   string `json:"phone"`
-	AddedAt int64  `json:"addedAt"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Phone    string `json:"phone"`
+	Telegram string `json:"telegram,omitempty"`
+	AddedAt  int64  `json:"addedAt"`
 }
 
 type WorkRec struct {
@@ -41,11 +47,27 @@ type WorkRec struct {
 	Date    string   `json:"date,omitempty"`
 }
 
+type Perms struct {
+	Map     bool `json:"map"`
+	Workers bool `json:"workers"`
+	Admins  bool `json:"admins"`
+	Reviews bool `json:"reviews"`
+}
+
 type Admin struct {
 	Login   string `json:"login"`
 	Salt    string `json:"salt"`
 	Hash    string `json:"hash"`
 	Primary bool   `json:"primary"`
+	Perms   Perms  `json:"perms"`
+}
+
+type Review struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Text  string `json:"text"`
+	Stars int    `json:"stars"`
+	Color string `json:"color,omitempty"`
 }
 
 type Alley struct {
@@ -53,15 +75,17 @@ type Alley struct {
 	Count int    `json:"count"`
 }
 
+// ---------- хранилище (файловое, для локальной разработки) ----------
+
 type DB struct {
 	Alleys       []Alley            `json:"alleys"`
 	Works        map[string]WorkRec `json:"works"`
 	Workers      []Worker           `json:"workers"`
 	Admins       []Admin            `json:"admins"`
+	Reviews      []Review           `json:"reviews"`
 	NextWorkerID int                `json:"nextWorkerId"`
+	NextReviewID int                `json:"nextReviewId"`
 }
-
-// ---------- хранилище ----------
 
 type Store struct {
 	mu sync.Mutex
@@ -95,6 +119,244 @@ func (s *Store) save() {
 	defer s.mu.Unlock()
 	s.saveLocked()
 }
+
+// ---------- единый интерфейс хранилища ----------
+
+type dataStore interface {
+	GetAlleys(ctx context.Context) ([]Alley, error)
+	GetWorks(ctx context.Context) (map[string]WorkRec, error)
+	GetWorkers(ctx context.Context) ([]Worker, error)
+	GetReviews(ctx context.Context) ([]Review, error)
+	GetAdmins(ctx context.Context) ([]Admin, error)
+	GetAdminByLogin(ctx context.Context, login string) (*Admin, error)
+	AddAdmin(ctx context.Context, login, pass string, perms Perms) error
+	RemoveAdmin(ctx context.Context, login string) (bool, error)
+	HasPerm(ctx context.Context, login, perm string) (bool, error)
+	AddWorker(ctx context.Context, name, phone, telegram string) (int, error)
+	EditWorker(ctx context.Context, id int, name, phone, telegram string) error
+	RemoveWorker(ctx context.Context, id int) error
+	AddReview(ctx context.Context, name, text string, stars int, color string) (int, error)
+	EditReview(ctx context.Context, id int, name, text string, stars int, color string) error
+	RemoveReview(ctx context.Context, id int) (bool, error)
+	SetWork(ctx context.Context, key string, rec *WorkRec) error
+}
+
+// ---------- имплементация dataStore для файлового Store ----------
+
+func (s *Store) GetAlleys(_ context.Context) ([]Alley, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Alley, len(s.db.Alleys))
+	copy(out, s.db.Alleys)
+	return out, nil
+}
+
+func (s *Store) GetWorks(_ context.Context) (map[string]WorkRec, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]WorkRec{}
+	for k, v := range s.db.Works {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (s *Store) GetWorkers(_ context.Context) ([]Worker, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Worker, len(s.db.Workers))
+	copy(out, s.db.Workers)
+	return out, nil
+}
+
+func (s *Store) GetReviews(_ context.Context) ([]Review, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Review, len(s.db.Reviews))
+	copy(out, s.db.Reviews)
+	return out, nil
+}
+
+func (s *Store) GetAdmins(_ context.Context) ([]Admin, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]Admin, len(s.db.Admins))
+	copy(out, s.db.Admins)
+	return out, nil
+}
+
+func (s *Store) GetAdminByLogin(_ context.Context, login string) (*Admin, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.db.Admins {
+		if s.db.Admins[i].Login == login {
+			a := s.db.Admins[i]
+			return &a, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *Store) AddAdmin(_ context.Context, login, pass string, perms Perms) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.db.Admins {
+		if a.Login == login {
+			return errDuplicateLogin
+		}
+	}
+	salt, hash := hashPassword(pass)
+	s.db.Admins = append(s.db.Admins, Admin{Login: login, Salt: salt, Hash: hash, Perms: perms})
+	s.saveLocked()
+	return nil
+}
+
+func (s *Store) RemoveAdmin(_ context.Context, login string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.db.Admins[:0]
+	removed := false
+	for _, a := range s.db.Admins {
+		if a.Login == login && !a.Primary {
+			removed = true
+			continue
+		}
+		out = append(out, a)
+	}
+	s.db.Admins = out
+	if removed {
+		s.saveLocked()
+	}
+	return removed, nil
+}
+
+func (s *Store) HasPerm(_ context.Context, login, perm string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.db.Admins {
+		if a.Login == login {
+			if a.Primary {
+				return true, nil
+			}
+			switch perm {
+			case "map":
+				return a.Perms.Map, nil
+			case "workers":
+				return a.Perms.Workers, nil
+			case "admins":
+				return a.Perms.Admins, nil
+			case "reviews":
+				return a.Perms.Reviews, nil
+			}
+			return false, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Store) AddWorker(_ context.Context, name, phone, telegram string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.db.NextWorkerID
+	s.db.NextWorkerID++
+	s.db.Workers = append(s.db.Workers, Worker{
+		ID: id, Name: name, Phone: phone, Telegram: telegram, AddedAt: time.Now().UnixMilli(),
+	})
+	s.saveLocked()
+	return id, nil
+}
+
+func (s *Store) EditWorker(_ context.Context, id int, name, phone, telegram string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.db.Workers {
+		if s.db.Workers[i].ID == id {
+			s.db.Workers[i].Name = name
+			s.db.Workers[i].Phone = phone
+			s.db.Workers[i].Telegram = telegram
+			s.saveLocked()
+			return nil
+		}
+	}
+	return pgx.ErrNoRows
+}
+
+func (s *Store) RemoveWorker(_ context.Context, id int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.db.Workers[:0]
+	for _, w := range s.db.Workers {
+		if w.ID == id {
+			continue
+		}
+		out = append(out, w)
+	}
+	s.db.Workers = out
+	s.saveLocked()
+	return nil
+}
+
+func (s *Store) AddReview(_ context.Context, name, text string, stars int, color string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.db.NextReviewID
+	s.db.NextReviewID++
+	s.db.Reviews = append(s.db.Reviews, Review{ID: id, Name: name, Text: text, Stars: stars, Color: color})
+	s.saveLocked()
+	return id, nil
+}
+
+func (s *Store) EditReview(_ context.Context, id int, name, text string, stars int, color string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.db.Reviews {
+		if s.db.Reviews[i].ID == id {
+			s.db.Reviews[i].Name = name
+			s.db.Reviews[i].Text = text
+			s.db.Reviews[i].Stars = stars
+			s.db.Reviews[i].Color = color
+			s.saveLocked()
+			return nil
+		}
+	}
+	return pgx.ErrNoRows
+}
+
+func (s *Store) RemoveReview(_ context.Context, id int) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.db.Reviews[:0]
+	removed := false
+	for _, r := range s.db.Reviews {
+		if r.ID == id {
+			removed = true
+			continue
+		}
+		out = append(out, r)
+	}
+	s.db.Reviews = out
+	if removed {
+		s.saveLocked()
+	}
+	return removed, nil
+}
+
+func (s *Store) SetWork(_ context.Context, key string, rec *WorkRec) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db.Works == nil {
+		s.db.Works = map[string]WorkRec{}
+	}
+	if rec == nil {
+		delete(s.db.Works, key)
+	} else {
+		s.db.Works[key] = *rec
+	}
+	s.saveLocked()
+	return nil
+}
+
+var errDuplicateLogin = errors.New("такой логин уже есть")
 
 // ---------- пароли (PBKDF2-HMAC-SHA256) ----------
 
@@ -181,7 +443,7 @@ const cookieName = "snt_session"
 // ---------- сервер ----------
 
 type Server struct {
-	store *Store
+	store dataStore
 	sess  *Sessions
 }
 
@@ -200,7 +462,6 @@ func (srv *Server) currentLogin(r *http.Request) (string, bool) {
 	return srv.sess.get(c.Value)
 }
 
-// auth — обёртка, требующая входа
 func (srv *Server) auth(h func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		login, ok := srv.currentLogin(r)
@@ -212,33 +473,60 @@ func (srv *Server) auth(h func(http.ResponseWriter, *http.Request, string)) http
 	}
 }
 
-// GET /api/data — публичные данные для карты
+func (srv *Server) requirePerm(perm string, h func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return srv.auth(func(w http.ResponseWriter, r *http.Request, login string) {
+		ok, err := srv.store.HasPerm(r.Context(), login, perm)
+		if err != nil || !ok {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "недостаточно прав"})
+			return
+		}
+		h(w, r, login)
+	})
+}
+
+// GET /api/data — публичные данные
 func (srv *Server) handleData(w http.ResponseWriter, r *http.Request) {
-	srv.store.mu.Lock()
-	defer srv.store.mu.Unlock()
+	ctx := r.Context()
+	alleys, err := srv.store.GetAlleys(ctx)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	works, err := srv.store.GetWorks(ctx)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	workers, err := srv.store.GetWorkers(ctx)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	reviews, err := srv.store.GetReviews(ctx)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJSON(w, 200, map[string]any{
-		"alleys":  srv.store.db.Alleys,
-		"works":   srv.store.db.Works,
-		"workers": srv.store.db.Workers,
+		"alleys": alleys, "works": works, "workers": workers, "reviews": reviews,
 	})
 }
 
 // POST /api/login
 func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Login, Pass string }
+	var in struct {
+		Login string `json:"login"`
+		Pass  string `json:"pass"`
+	}
 	if json.NewDecoder(r.Body).Decode(&in) != nil {
 		writeJSON(w, 400, map[string]string{"error": "плохой запрос"})
 		return
 	}
-	srv.store.mu.Lock()
-	var found *Admin
-	for i := range srv.store.db.Admins {
-		if srv.store.db.Admins[i].Login == in.Login {
-			found = &srv.store.db.Admins[i]
-			break
-		}
+	found, err := srv.store.GetAdminByLogin(r.Context(), in.Login)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
 	}
-	srv.store.mu.Unlock()
 	if found == nil || !verifyPassword(in.Pass, found.Salt, found.Hash) {
 		writeJSON(w, 401, map[string]string{"error": "неверный логин или пароль"})
 		return
@@ -272,90 +560,192 @@ func (srv *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/admins
 func (srv *Server) handleAdminsList(w http.ResponseWriter, r *http.Request, _ string) {
-	srv.store.mu.Lock()
-	defer srv.store.mu.Unlock()
-	out := make([]map[string]any, 0, len(srv.store.db.Admins))
-	for _, a := range srv.store.db.Admins {
-		out = append(out, map[string]any{"login": a.Login, "primary": a.Primary})
+	admins, err := srv.store.GetAdmins(r.Context())
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	out := make([]map[string]any, 0, len(admins))
+	for _, a := range admins {
+		out = append(out, map[string]any{"login": a.Login, "primary": a.Primary, "perms": a.Perms})
 	}
 	writeJSON(w, 200, out)
 }
 
 // POST /api/admins
 func (srv *Server) handleAdminsAdd(w http.ResponseWriter, r *http.Request, _ string) {
-	var in struct{ Login, Pass string }
+	var in struct {
+		Login string `json:"login"`
+		Pass  string `json:"pass"`
+		Perms Perms  `json:"perms"`
+	}
 	if json.NewDecoder(r.Body).Decode(&in) != nil || in.Login == "" || in.Pass == "" {
 		writeJSON(w, 400, map[string]string{"error": "укажите логин и пароль"})
 		return
 	}
-	srv.store.mu.Lock()
-	for _, a := range srv.store.db.Admins {
-		if a.Login == in.Login {
-			srv.store.mu.Unlock()
+	err := srv.store.AddAdmin(r.Context(), in.Login, in.Pass, in.Perms)
+	if err != nil {
+		if errors.Is(err, errDuplicateLogin) {
 			writeJSON(w, 409, map[string]string{"error": "такой логин уже есть"})
-			return
+		} else {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				writeJSON(w, 409, map[string]string{"error": "такой логин уже есть"})
+			} else {
+				writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+			}
 		}
+		return
 	}
-	salt, hash := hashPassword(in.Pass)
-	srv.store.db.Admins = append(srv.store.db.Admins, Admin{Login: in.Login, Salt: salt, Hash: hash})
-	srv.store.saveLocked()
-	srv.store.mu.Unlock()
 	writeJSON(w, 201, map[string]string{"login": in.Login})
 }
 
 // DELETE /api/admins/{login}
 func (srv *Server) handleAdminsDel(w http.ResponseWriter, r *http.Request, _ string) {
 	login := r.PathValue("login")
-	srv.store.mu.Lock()
-	out := srv.store.db.Admins[:0]
-	removed := false
-	for _, a := range srv.store.db.Admins {
-		if a.Login == login && !a.Primary {
-			removed = true
-			continue
-		}
-		out = append(out, a)
+	removed, err := srv.store.RemoveAdmin(r.Context(), login)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
 	}
-	srv.store.db.Admins = out
-	if removed {
-		srv.store.saveLocked()
-	}
-	srv.store.mu.Unlock()
 	writeJSON(w, 200, map[string]bool{"removed": removed})
 }
 
 // POST /api/workers
 func (srv *Server) handleWorkersAdd(w http.ResponseWriter, r *http.Request, _ string) {
-	var in struct{ Name, Phone string }
+	var in struct{ Name, Phone, Telegram string }
 	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя"})
 		return
 	}
-	srv.store.mu.Lock()
-	id := srv.store.db.NextWorkerID
-	srv.store.db.NextWorkerID++
-	srv.store.db.Workers = append(srv.store.db.Workers, Worker{
-		ID: id, Name: strings.TrimSpace(in.Name), Phone: strings.TrimSpace(in.Phone), AddedAt: time.Now().UnixMilli(),
-	})
-	srv.store.saveLocked()
-	srv.store.mu.Unlock()
+	id, err := srv.store.AddWorker(r.Context(),
+		strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), strings.TrimSpace(in.Telegram))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
 	writeJSON(w, 201, map[string]int{"id": id})
 }
 
 // DELETE /api/workers/{id}
 func (srv *Server) handleWorkersDel(w http.ResponseWriter, r *http.Request, _ string) {
-	id := r.PathValue("id")
-	srv.store.mu.Lock()
-	out := srv.store.db.Workers[:0]
-	for _, wk := range srv.store.db.Workers {
-		if itoa(wk.ID) == id {
-			continue
-		}
-		out = append(out, wk)
+	id := parseInt(r.PathValue("id"))
+	if id == 0 {
+		writeJSON(w, 400, map[string]string{"error": "неверный id"})
+		return
 	}
-	srv.store.db.Workers = out
-	srv.store.saveLocked()
-	srv.store.mu.Unlock()
+	err := srv.store.RemoveWorker(r.Context(), id)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+// PUT /api/workers/{id}
+func (srv *Server) handleWorkersEdit(w http.ResponseWriter, r *http.Request, _ string) {
+	id := parseInt(r.PathValue("id"))
+	if id == 0 {
+		writeJSON(w, 400, map[string]string{"error": "неверный id"})
+		return
+	}
+	var in struct{ Name, Phone, Telegram string }
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" {
+		writeJSON(w, 400, map[string]string{"error": "укажите имя"})
+		return
+	}
+	err := srv.store.EditWorker(r.Context(), id,
+		strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), strings.TrimSpace(in.Telegram))
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "не найден"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
+// GET /api/reviews
+func (srv *Server) handleReviewsList(w http.ResponseWriter, r *http.Request) {
+	reviews, err := srv.store.GetReviews(r.Context())
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 200, reviews)
+}
+
+// POST /api/reviews
+func (srv *Server) handleReviewsAdd(w http.ResponseWriter, r *http.Request, _ string) {
+	var in struct {
+		Name  string `json:"name"`
+		Text  string `json:"text"`
+		Stars int    `json:"stars"`
+		Color string `json:"color,omitempty"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Text) == "" {
+		writeJSON(w, 400, map[string]string{"error": "укажите имя и текст"})
+		return
+	}
+	if in.Stars < 1 || in.Stars > 5 {
+		in.Stars = 5
+	}
+	id, err := srv.store.AddReview(r.Context(),
+		strings.TrimSpace(in.Name), strings.TrimSpace(in.Text), in.Stars, strings.TrimSpace(in.Color))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 201, map[string]int{"id": id})
+}
+
+// DELETE /api/reviews/{id}
+func (srv *Server) handleReviewsDel(w http.ResponseWriter, r *http.Request, _ string) {
+	id := parseInt(r.PathValue("id"))
+	if id == 0 {
+		writeJSON(w, 400, map[string]string{"error": "неверный id"})
+		return
+	}
+	removed, err := srv.store.RemoveReview(r.Context(), id)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"removed": removed})
+}
+
+// PUT /api/reviews/{id}
+func (srv *Server) handleReviewsEdit(w http.ResponseWriter, r *http.Request, _ string) {
+	id := parseInt(r.PathValue("id"))
+	if id == 0 {
+		writeJSON(w, 400, map[string]string{"error": "неверный id"})
+		return
+	}
+	var in struct {
+		Name  string `json:"name"`
+		Text  string `json:"text"`
+		Stars int    `json:"stars"`
+		Color string `json:"color,omitempty"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Text) == "" {
+		writeJSON(w, 400, map[string]string{"error": "укажите имя и текст"})
+		return
+	}
+	if in.Stars < 1 || in.Stars > 5 {
+		in.Stars = 5
+	}
+	err := srv.store.EditReview(r.Context(), id,
+		strings.TrimSpace(in.Name), strings.TrimSpace(in.Text), in.Stars, strings.TrimSpace(in.Color))
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "не найден"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
@@ -369,26 +759,23 @@ func (srv *Server) handleWorks(w http.ResponseWriter, r *http.Request, _ string)
 		writeJSON(w, 400, map[string]string{"error": "плохой запрос"})
 		return
 	}
-	srv.store.mu.Lock()
-	if srv.store.db.Works == nil {
-		srv.store.db.Works = map[string]WorkRec{}
+	err := srv.store.SetWork(r.Context(), in.Key, in.Rec)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
 	}
-	if in.Rec == nil {
-		delete(srv.store.db.Works, in.Key)
-	} else {
-		srv.store.db.Works[in.Key] = *in.Rec
-	}
-	srv.store.saveLocked()
-	srv.store.mu.Unlock()
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
-func itoa(i int) string {
-	return strings.TrimSpace(jsonNum(i))
-}
-func jsonNum(i int) string {
-	b, _ := json.Marshal(i)
-	return string(b)
+func parseInt(s string) int {
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 func main() {
@@ -397,8 +784,22 @@ func main() {
 		addr = ":" + v
 	}
 
-	store := &Store{}
-	store.load()
+	var store dataStore
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		db, err := NewDatabase(context.Background(), dbURL)
+		if err != nil {
+			log.Fatalf("ошибка подключения к БД: %v", err)
+		}
+		defer db.Close()
+		store = db
+		log.Println("режим: PostgreSQL")
+	} else {
+		s := &Store{}
+		s.load()
+		store = s
+		log.Println("режим: data.json (локальная разработка)")
+	}
+
 	srv := &Server{store: store, sess: newSessions()}
 
 	mux := http.NewServeMux()
@@ -406,12 +807,17 @@ func main() {
 	mux.HandleFunc("POST /api/login", srv.handleLogin)
 	mux.HandleFunc("POST /api/logout", srv.handleLogout)
 	mux.HandleFunc("GET /api/session", srv.handleSession)
-	mux.HandleFunc("GET /api/admins", srv.auth(srv.handleAdminsList))
-	mux.HandleFunc("POST /api/admins", srv.auth(srv.handleAdminsAdd))
-	mux.HandleFunc("DELETE /api/admins/{login}", srv.auth(srv.handleAdminsDel))
-	mux.HandleFunc("POST /api/workers", srv.auth(srv.handleWorkersAdd))
-	mux.HandleFunc("DELETE /api/workers/{id}", srv.auth(srv.handleWorkersDel))
-	mux.HandleFunc("POST /api/works", srv.auth(srv.handleWorks))
+	mux.HandleFunc("GET /api/admins", srv.requirePerm("admins", srv.handleAdminsList))
+	mux.HandleFunc("POST /api/admins", srv.requirePerm("admins", srv.handleAdminsAdd))
+	mux.HandleFunc("DELETE /api/admins/{login}", srv.requirePerm("admins", srv.handleAdminsDel))
+	mux.HandleFunc("POST /api/workers", srv.requirePerm("workers", srv.handleWorkersAdd))
+	mux.HandleFunc("PUT /api/workers/{id}", srv.requirePerm("workers", srv.handleWorkersEdit))
+	mux.HandleFunc("DELETE /api/workers/{id}", srv.requirePerm("workers", srv.handleWorkersDel))
+	mux.HandleFunc("POST /api/works", srv.requirePerm("map", srv.handleWorks))
+	mux.HandleFunc("GET /api/reviews", srv.handleReviewsList)
+	mux.HandleFunc("POST /api/reviews", srv.requirePerm("reviews", srv.handleReviewsAdd))
+	mux.HandleFunc("DELETE /api/reviews/{id}", srv.requirePerm("reviews", srv.handleReviewsDel))
+	mux.HandleFunc("PUT /api/reviews/{id}", srv.requirePerm("reviews", srv.handleReviewsEdit))
 
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
@@ -419,7 +825,7 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
 
-// ---------- стартовые данные ----------
+// ---------- стартовые данные (для data.json) ----------
 
 func seed() DB {
 	salt, hash := hashPassword("admin")
@@ -441,11 +847,21 @@ func seed() DB {
 			"Ключевая аллея 2":  {Status: "planned", Workers: []string{"Роман"}, Work: "Покос травы"},
 		},
 		Workers: []Worker{
-			{ID: 1, Name: "Ярослав", Phone: "+7 967 592 58 71", AddedAt: 0},
-			{ID: 2, Name: "Роман", Phone: "+7 981 204 11 78", AddedAt: 0},
-			{ID: 3, Name: "Денис", Phone: "+7 950 029 03 98", AddedAt: 0},
+			{ID: 1, Name: "Ярослав", Phone: "+7 967 592 58 71", Telegram: "https://t.me/+79675925871", AddedAt: 0},
+			{ID: 2, Name: "Роман", Phone: "+7 981 204 11 78", Telegram: "https://t.me/+79812041178", AddedAt: 0},
+			{ID: 3, Name: "Денис", Phone: "+7 950 029 03 98", Telegram: "https://t.me/+79500290398", AddedAt: 0},
 		},
-		Admins:       []Admin{{Login: "admin", Salt: salt, Hash: hash, Primary: true}},
+		Admins: []Admin{{
+			Login: "admin", Salt: salt, Hash: hash, Primary: true,
+			Perms: Perms{Map: true, Workers: true, Admins: true, Reviews: true},
+		}},
+		Reviews: []Review{
+			{ID: 1, Name: "Людмила", Text: "Скосили всё за полдня, участок было не узнать. Договорились по телефону, приехали минута в минуту.", Stars: 5},
+			{ID: 2, Name: "Виктор", Text: "Перекопали землю под грядки и вывезли весь хлам после стройки. Сделали аккуратно, цену обговорили заранее.", Stars: 5, Color: "var(--sun)"},
+			{ID: 3, Name: "Нина Петровна", Text: "Канавы стояли годами, после дождя топило. Прочистили — вода уходит. Спасибо, выручили.", Stars: 5, Color: "#3f7d2e"},
+			{ID: 4, Name: "Олег", Text: "Помогли разобрать старый сарай и всё вывезти, спилили пару старых яблонь. Работящие, не ленятся. Будем звать ещё.", Stars: 5},
+		},
 		NextWorkerID: 4,
+		NextReviewID: 5,
 	}
 }
