@@ -62,6 +62,11 @@ func (db *Database) migrate(ctx context.Context) error {
 		hash TEXT NOT NULL,
 		is_primary BOOLEAN NOT NULL DEFAULT false,
 		perms TEXT NOT NULL DEFAULT '{}'
+	);
+	CREATE TABLE IF NOT EXISTS sessions (
+		token TEXT PRIMARY KEY,
+		login TEXT NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL
 	);`
 	if _, err := db.pool.Exec(ctx, schema); err != nil {
 		return err
@@ -78,55 +83,28 @@ func (db *Database) migrate(ctx context.Context) error {
 }
 
 func (db *Database) seed(ctx context.Context) {
-	salt, hash := hashPassword("2606")
+	salt, hash := hashPassword(seedAdminPassword)
 	perms, _ := json.Marshal(Perms{Map: true, Workers: true, Admins: true, Reviews: true})
 	now := time.Now().UnixMilli()
 
-	alleys := []struct{ label string; count int }{
-		{"Дачная аллея", 13}, {"Западная улица", 18}, {"Набережная улица", 26},
-		{"Восточная улица", 22}, {"Лучевая аллея", 22}, {"Зелёная аллея", 24},
-		{"Ключевая аллея", 26}, {"Луговая аллея", 28}, {"Цветочная аллея", 30},
-		{"Полевая аллея", 32}, {"Родниковая аллея", 30}, {"Лесная аллея", 28},
-		{"Тенистая аллея", 24}, {"Озёрная аллея", 20}, {"Южная аллея", 23},
-	}
-	for _, a := range alleys {
-		db.pool.Exec(ctx, "INSERT INTO alleys(label,count) VALUES($1,$2) ON CONFLICT DO NOTHING", a.label, a.count)
+	for _, a := range seedAlleys {
+		db.pool.Exec(ctx, "INSERT INTO alleys(label,count) VALUES($1,$2) ON CONFLICT DO NOTHING", a.Label, a.Count)
 	}
 
-	works := map[string]WorkRec{
-		"Лучевая аллея 7":   {Status: "done", Workers: []string{"Ярослав", "Роман"}, Work: "Покос травы и уборка мусора", Date: "июнь 2026"},
-		"Южная аллея 5":     {Status: "done", Workers: []string{"Ярослав"}, Work: "Покос травы", Date: "июнь 2026"},
-		"Цветочная аллея 9": {Status: "done", Workers: []string{"Денис", "Роман"}, Work: "Чистка канав, покос травы", Date: "май 2026"},
-		"Луговая аллея 14":  {Status: "progress", Workers: []string{"Денис"}, Work: "Перекопка земли под грядки"},
-		"Полевая аллея 21":  {Status: "progress", Workers: []string{"Ярослав", "Роман", "Денис"}, Work: "Уборка участка и перекопка щебня"},
-		"Зелёная аллея 3":   {Status: "planned", Workers: []string{"Ярослав"}, Work: "Спил мелких деревьев и поросли"},
-		"Ключевая аллея 2":  {Status: "planned", Workers: []string{"Роман"}, Work: "Покос травы"},
-	}
-	for k, w := range works {
+	for k, w := range seedWorks {
 		db.pool.Exec(ctx, "INSERT INTO works(key,status,workers,work_desc,date) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
 			k, w.Status, w.Workers, w.Work, w.Date)
 	}
 
-	workers := []struct{ name, phone, telegram string }{
-		{"Ярослав", "+7 967 592 58 71", "https://t.me/+79675925871"},
-		{"Роман", "+7 981 204 11 78", "https://t.me/+79812041178"},
-		{"Денис", "+7 950 029 03 98", "https://t.me/+79500290398"},
-	}
-	for _, w := range workers {
+	for _, w := range seedWorkers {
 		db.pool.Exec(ctx, "INSERT INTO workers(name,phone,telegram,added_at) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-			w.name, w.phone, w.telegram, now)
+			w.Name, w.Phone, w.Telegram, now)
 	}
 
 	db.pool.Exec(ctx, "INSERT INTO admins(login,salt,hash,is_primary,perms) VALUES($1,$2,$3,true,$4) ON CONFLICT DO NOTHING",
-		"xverlxrd", salt, hash, string(perms))
+		seedAdminLogin, salt, hash, string(perms))
 
-	reviews := []Review{
-		{Name: "Людмила", Text: "Скосили всё за полдня, участок было не узнать. Договорились по телефону, приехали минута в минуту.", Stars: 5},
-		{Name: "Виктор", Text: "Перекопали землю под грядки и вывезли весь хлам после стройки. Сделали аккуратно, цену обговорили заранее.", Stars: 5, Color: "var(--sun)"},
-		{Name: "Нина Петровна", Text: "Канавы стояли годами, после дождя топило. Прочистили — вода уходит. Спасибо, выручили.", Stars: 5, Color: "#3f7d2e"},
-		{Name: "Олег", Text: "Помогли разобрать старый сарай и всё вывезти, спилили пару старых яблонь. Работящие, не ленятся. Будем звать ещё.", Stars: 5},
-	}
-	for _, r := range reviews {
+	for _, r := range seedReviews {
 		db.pool.Exec(ctx, "INSERT INTO reviews(name,text,stars,color) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
 			r.Name, r.Text, r.Stars, r.Color)
 	}
@@ -352,4 +330,53 @@ func (db *Database) HasPerm(ctx context.Context, login, perm string) (bool, erro
 		return p.Reviews, nil
 	}
 	return false, nil
+}
+
+// --- сессии (Postgres) ---
+//
+// В отличие от MemSessions переживают перезапуск/передеплой процесса —
+// администратора не разлогинивает при каждом обновлении бинарника.
+
+type DBSessions struct {
+	pool *pgxpool.Pool
+}
+
+func newDBSessions(pool *pgxpool.Pool) *DBSessions {
+	s := &DBSessions{pool: pool}
+	go s.cleanupLoop()
+	return s
+}
+
+func (s *DBSessions) Create(ctx context.Context, login string) (string, error) {
+	tok := newSessionToken()
+	_, err := s.pool.Exec(ctx,
+		"INSERT INTO sessions(token,login,expires_at) VALUES($1,$2,$3)",
+		tok, login, time.Now().Add(sessionTTL))
+	if err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+func (s *DBSessions) Get(ctx context.Context, tok string) (string, bool) {
+	var login string
+	err := s.pool.QueryRow(ctx,
+		"SELECT login FROM sessions WHERE token=$1 AND expires_at > now()", tok).Scan(&login)
+	if err != nil {
+		return "", false
+	}
+	return login, true
+}
+
+func (s *DBSessions) Drop(ctx context.Context, tok string) {
+	s.pool.Exec(ctx, "DELETE FROM sessions WHERE token=$1", tok)
+}
+
+func (s *DBSessions) cleanupLoop() {
+	ctx := context.Background()
+	t := time.NewTicker(cleanupInterval)
+	defer t.Stop()
+	for range t.C {
+		s.pool.Exec(ctx, "DELETE FROM sessions WHERE expires_at <= now()")
+	}
 }

@@ -13,12 +13,23 @@
   var readyCbs = [];
   var isReady = false;
 
+  function readCookie(name) {
+    var m = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
   function api(path, opts) {
     opts = opts || {};
     opts.credentials = 'same-origin';
+    opts.headers = opts.headers || {};
     if (opts.body !== undefined) {
-      opts.headers = { 'Content-Type': 'application/json' };
+      opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(opts.body);
+    }
+    var method = (opts.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      var csrf = readCookie('snt_csrf');
+      if (csrf) opts.headers['X-CSRF-Token'] = csrf;
     }
     return fetch('/api' + path, opts);
   }

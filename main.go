@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -408,43 +409,14 @@ func verifyPassword(pass, saltHex, hashHex string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
-// ---------- сессии ----------
-
-type Sessions struct {
-	mu sync.Mutex
-	m  map[string]string // token -> login
-}
-
-func newSessions() *Sessions { return &Sessions{m: map[string]string{}} }
-
-func (s *Sessions) create(login string) string {
-	tok := make([]byte, 32)
-	rand.Read(tok)
-	t := hex.EncodeToString(tok)
-	s.mu.Lock()
-	s.m[t] = login
-	s.mu.Unlock()
-	return t
-}
-func (s *Sessions) get(tok string) (string, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	l, ok := s.m[tok]
-	return l, ok
-}
-func (s *Sessions) drop(tok string) {
-	s.mu.Lock()
-	delete(s.m, tok)
-	s.mu.Unlock()
-}
+// ---------- сервер ----------
 
 const cookieName = "snt_session"
 
-// ---------- сервер ----------
-
 type Server struct {
 	store dataStore
-	sess  *Sessions
+	sess  SessionStore
+	limit *LoginLimiter
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -459,7 +431,7 @@ func (srv *Server) currentLogin(r *http.Request) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return srv.sess.get(c.Value)
+	return srv.sess.Get(r.Context(), c.Value)
 }
 
 func (srv *Server) auth(h func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
@@ -518,23 +490,45 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Login string `json:"login"`
 		Pass  string `json:"pass"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil {
+	if json.NewDecoder(r.Body).Decode(&in) != nil ||
+		len(in.Login) > maxLoginLen || len(in.Pass) > maxPassLen {
 		writeJSON(w, 400, map[string]string{"error": "плохой запрос"})
 		return
 	}
+
+	key := loginLimiterKey(r, in.Login)
+	if blocked, retryAfter := srv.limit.Blocked(key); blocked {
+		w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "слишком много попыток, попробуйте позже"})
+		return
+	}
+
 	found, err := srv.store.GetAdminByLogin(r.Context(), in.Login)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
 		return
 	}
 	if found == nil || !verifyPassword(in.Pass, found.Salt, found.Hash) {
+		srv.limit.RecordFailure(key)
 		writeJSON(w, 401, map[string]string{"error": "неверный логин или пароль"})
 		return
 	}
-	tok := srv.sess.create(found.Login)
+	srv.limit.RecordSuccess(key)
+
+	tok, err := srv.sess.Create(r.Context(), found.Login)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	secure := isSecureRequest(r)
+	maxAge := int(sessionTTL.Seconds())
 	http.SetCookie(w, &http.Cookie{
-		Name: cookieName, Value: tok, Path: "/",
-		HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Name: cookieName, Value: tok, Path: "/", MaxAge: maxAge,
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name: csrfCookieName, Value: newSessionToken(), Path: "/", MaxAge: maxAge,
+		HttpOnly: false, Secure: secure, SameSite: http.SameSiteLaxMode,
 	})
 	writeJSON(w, 200, map[string]string{"login": found.Login})
 }
@@ -542,9 +536,11 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // POST /api/logout
 func (srv *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(cookieName); err == nil {
-		srv.sess.drop(c.Value)
+		srv.sess.Drop(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	secure := isSecureRequest(r)
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: false, Secure: secure})
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
@@ -579,8 +575,13 @@ func (srv *Server) handleAdminsAdd(w http.ResponseWriter, r *http.Request, _ str
 		Pass  string `json:"pass"`
 		Perms Perms  `json:"perms"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || in.Login == "" || in.Pass == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || in.Login == "" || in.Pass == "" ||
+		len(in.Login) > maxLoginLen || len(in.Pass) > maxPassLen {
 		writeJSON(w, 400, map[string]string{"error": "укажите логин и пароль"})
+		return
+	}
+	if len(in.Pass) < minPassLen {
+		writeJSON(w, 400, map[string]string{"error": "пароль должен быть не короче 6 символов"})
 		return
 	}
 	err := srv.store.AddAdmin(r.Context(), in.Login, in.Pass, in.Perms)
@@ -614,7 +615,8 @@ func (srv *Server) handleAdminsDel(w http.ResponseWriter, r *http.Request, _ str
 // POST /api/workers
 func (srv *Server) handleWorkersAdd(w http.ResponseWriter, r *http.Request, _ string) {
 	var in struct{ Name, Phone, Telegram string }
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" ||
+		!withinLimits(in.Name, maxNameLen) || !withinLimits(in.Phone, maxPhoneLen) || !withinLimits(in.Telegram, maxTelegramLen) {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя"})
 		return
 	}
@@ -650,7 +652,8 @@ func (srv *Server) handleWorkersEdit(w http.ResponseWriter, r *http.Request, _ s
 		return
 	}
 	var in struct{ Name, Phone, Telegram string }
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" ||
+		!withinLimits(in.Name, maxNameLen) || !withinLimits(in.Phone, maxPhoneLen) || !withinLimits(in.Telegram, maxTelegramLen) {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя"})
 		return
 	}
@@ -685,7 +688,8 @@ func (srv *Server) handleReviewsAdd(w http.ResponseWriter, r *http.Request, _ st
 		Stars int    `json:"stars"`
 		Color string `json:"color,omitempty"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Text) == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Text) == "" ||
+		!withinLimits(in.Name, maxNameLen) || !withinLimits(in.Text, maxTextLen) || !withinLimits(in.Color, maxColorLen) {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя и текст"})
 		return
 	}
@@ -729,7 +733,8 @@ func (srv *Server) handleReviewsEdit(w http.ResponseWriter, r *http.Request, _ s
 		Stars int    `json:"stars"`
 		Color string `json:"color,omitempty"`
 	}
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Text) == "" {
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || strings.TrimSpace(in.Text) == "" ||
+		!withinLimits(in.Name, maxNameLen) || !withinLimits(in.Text, maxTextLen) || !withinLimits(in.Color, maxColorLen) {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя и текст"})
 		return
 	}
@@ -785,6 +790,7 @@ func main() {
 	}
 
 	var store dataStore
+	var sess SessionStore
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		db, err := NewDatabase(context.Background(), dbURL)
 		if err != nil {
@@ -792,16 +798,26 @@ func main() {
 		}
 		defer db.Close()
 		store = db
-		log.Println("режим: PostgreSQL")
+		sess = newDBSessions(db.pool)
+		log.Println("режим: PostgreSQL (сессии переживают перезапуск)")
 	} else {
 		s := &Store{}
 		s.load()
 		store = s
-		log.Println("режим: data.json (локальная разработка)")
+		sess = newMemSessions()
+		log.Println("режим: data.json (локальная разработка, сессии в памяти)")
 	}
 
-	srv := &Server{store: store, sess: newSessions()}
+	srv := &Server{store: store, sess: sess, limit: newLoginLimiter()}
+	handler := buildHandler(srv)
 
+	log.Printf("сервер запущен: http://localhost%s", addr)
+	log.Fatal(http.ListenAndServe(addr, handler))
+}
+
+// buildHandler собирает роутинг и цепочку middleware. Вынесено отдельно от
+// main(), чтобы то же самое можно было поднять в тестах через httptest.
+func buildHandler(srv *Server) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/data", srv.handleData)
 	mux.HandleFunc("POST /api/login", srv.handleLogin)
@@ -821,47 +837,34 @@ func main() {
 
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
-	log.Printf("сервер запущен: http://localhost%s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	return securityHeaders(limitBody(srv.csrfMiddleware(mux)))
 }
 
 // ---------- стартовые данные (для data.json) ----------
 
 func seed() DB {
-	salt, hash := hashPassword("2606")
+	salt, hash := hashPassword(seedAdminPassword)
+	alleys := make([]Alley, len(seedAlleys))
+	copy(alleys, seedAlleys)
+	works := make(map[string]WorkRec, len(seedWorks))
+	for k, v := range seedWorks {
+		works[k] = v
+	}
+	workers := make([]Worker, len(seedWorkers))
+	copy(workers, seedWorkers)
+	reviews := make([]Review, len(seedReviews))
+	copy(reviews, seedReviews)
+
 	return DB{
-		Alleys: []Alley{
-			{"Дачная аллея", 13}, {"Западная улица", 18}, {"Набережная улица", 26},
-			{"Восточная улица", 22}, {"Лучевая аллея", 22}, {"Зелёная аллея", 24},
-			{"Ключевая аллея", 26}, {"Луговая аллея", 28}, {"Цветочная аллея", 30},
-			{"Полевая аллея", 32}, {"Родниковая аллея", 30}, {"Лесная аллея", 28},
-			{"Тенистая аллея", 24}, {"Озёрная аллея", 20}, {"Южная аллея", 23},
-		},
-		Works: map[string]WorkRec{
-			"Лучевая аллея 7":   {Status: "done", Workers: []string{"Ярослав", "Роман"}, Work: "Покос травы и уборка мусора", Date: "июнь 2026"},
-			"Южная аллея 5":     {Status: "done", Workers: []string{"Ярослав"}, Work: "Покос травы", Date: "июнь 2026"},
-			"Цветочная аллея 9": {Status: "done", Workers: []string{"Денис", "Роман"}, Work: "Чистка канав, покос травы", Date: "май 2026"},
-			"Луговая аллея 14":  {Status: "progress", Workers: []string{"Денис"}, Work: "Перекопка земли под грядки"},
-			"Полевая аллея 21":  {Status: "progress", Workers: []string{"Ярослав", "Роман", "Денис"}, Work: "Уборка участка и перекопка щебня"},
-			"Зелёная аллея 3":   {Status: "planned", Workers: []string{"Ярослав"}, Work: "Спил мелких деревьев и поросли"},
-			"Ключевая аллея 2":  {Status: "planned", Workers: []string{"Роман"}, Work: "Покос травы"},
-		},
-		Workers: []Worker{
-			{ID: 1, Name: "Ярослав", Phone: "+7 967 592 58 71", Telegram: "https://t.me/+79675925871", AddedAt: 0},
-			{ID: 2, Name: "Роман", Phone: "+7 981 204 11 78", Telegram: "https://t.me/+79812041178", AddedAt: 0},
-			{ID: 3, Name: "Денис", Phone: "+7 950 029 03 98", Telegram: "https://t.me/+79500290398", AddedAt: 0},
-		},
+		Alleys:  alleys,
+		Works:   works,
+		Workers: workers,
 		Admins: []Admin{{
-			Login: "xverlxrd", Salt: salt, Hash: hash, Primary: true,
+			Login: seedAdminLogin, Salt: salt, Hash: hash, Primary: true,
 			Perms: Perms{Map: true, Workers: true, Admins: true, Reviews: true},
 		}},
-		Reviews: []Review{
-			{ID: 1, Name: "Людмила", Text: "Скосили всё за полдня, участок было не узнать. Договорились по телефону, приехали минута в минуту.", Stars: 5},
-			{ID: 2, Name: "Виктор", Text: "Перекопали землю под грядки и вывезли весь хлам после стройки. Сделали аккуратно, цену обговорили заранее.", Stars: 5, Color: "var(--sun)"},
-			{ID: 3, Name: "Нина Петровна", Text: "Канавы стояли годами, после дождя топило. Прочистили — вода уходит. Спасибо, выручили.", Stars: 5, Color: "#3f7d2e"},
-			{ID: 4, Name: "Олег", Text: "Помогли разобрать старый сарай и всё вывезти, спилили пару старых яблонь. Работящие, не ленятся. Будем звать ещё.", Stars: 5},
-		},
-		NextWorkerID: 4,
-		NextReviewID: 5,
+		Reviews:      reviews,
+		NextWorkerID: len(workers) + 1,
+		NextReviewID: len(reviews) + 1,
 	}
 }
