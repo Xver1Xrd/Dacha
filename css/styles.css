@@ -237,9 +237,18 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
 /* ---------- REVIEWS ---------- */
 .reviews{padding:14px 0 78px;background:var(--cream)}
 .reviews .sec-head{margin-bottom:34px}
-.reviews-carousel{position:relative;overflow:hidden;max-width:600px;margin:0 auto;padding:0 48px}
-.carousel-track{display:flex;transition:transform .45s cubic-bezier(.25,.46,.45,.94);will-change:transform}
-.carousel-slide{flex:none;width:100%;box-sizing:border-box}
+.reviews-carousel{position:relative}
+.carousel-track{
+  display:flex;gap:20px;overflow-x:auto;scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+  scrollbar-width:none;padding:8px 64px;margin:-8px 0;
+  scroll-padding-inline:64px;
+  -webkit-mask-image:linear-gradient(to right,transparent,#000 64px,#000 calc(100% - 64px),transparent);
+  mask-image:linear-gradient(to right,transparent,#000 64px,#000 calc(100% - 64px),transparent);
+}
+.carousel-track::-webkit-scrollbar{display:none}
+.carousel-slide{flex:0 0 min(340px,80vw);scroll-snap-align:start;box-sizing:border-box;display:flex}
+.carousel-slide .card-rev{width:100%}
 .carousel-btn{
   position:absolute;top:50%;transform:translateY(-50%);z-index:2;
   width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:var(--card);
@@ -247,8 +256,8 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
   transition:background .15s,box-shadow .15s;box-shadow:var(--shadow-sm);
 }
 .carousel-btn:hover{background:var(--cream);box-shadow:var(--shadow-md)}
-.carousel-prev{left:0}
-.carousel-next{right:0}
+.carousel-prev{left:8px}
+.carousel-next{right:8px}
 .carousel-dots{display:flex;justify-content:center;gap:8px;margin-top:20px}
 .carousel-dot{
   width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line);background:transparent;
@@ -367,7 +376,12 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .services{padding:18px 0 56px}
   .why,.reviews{padding:52px 0}
   .reviews{padding-top:8px}
-  .reviews-carousel{padding:0 36px}
+  .carousel-btn{display:none}
+  .carousel-track{
+    padding:8px 28px;scroll-padding-inline:28px;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 28px,#000 calc(100% - 28px),transparent);
+    mask-image:linear-gradient(to right,transparent,#000 28px,#000 calc(100% - 28px),transparent);
+  }
   .contact{padding:56px 0}
   .sec-head{margin-bottom:28px}
   .card-serv{padding:22px 18px}

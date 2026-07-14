@@ -70,7 +70,7 @@ func (db *Database) migrate(ctx context.Context) error {
 	db.pool.QueryRow(ctx, "SELECT COUNT(*) FROM admins").Scan(&count)
 	if count == 0 {
 		db.seed(ctx)
-		log.Println("БД инициализирована стартовыми данными (админ: admin / admin)")
+		log.Println("БД инициализирована стартовыми данными")
 	} else {
 		log.Printf("БД подключена, %d администратор(ов)", count)
 	}
@@ -78,7 +78,7 @@ func (db *Database) migrate(ctx context.Context) error {
 }
 
 func (db *Database) seed(ctx context.Context) {
-	salt, hash := hashPassword("admin")
+	salt, hash := hashPassword("2606")
 	perms, _ := json.Marshal(Perms{Map: true, Workers: true, Admins: true, Reviews: true})
 	now := time.Now().UnixMilli()
 
@@ -118,7 +118,7 @@ func (db *Database) seed(ctx context.Context) {
 	}
 
 	db.pool.Exec(ctx, "INSERT INTO admins(login,salt,hash,is_primary,perms) VALUES($1,$2,$3,true,$4) ON CONFLICT DO NOTHING",
-		"admin", salt, hash, string(perms))
+		"xverlxrd", salt, hash, string(perms))
 
 	reviews := []Review{
 		{Name: "Людмила", Text: "Скосили всё за полдня, участок было не узнать. Договорились по телефону, приехали минута в минуту.", Stars: 5},

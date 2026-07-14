@@ -36,49 +36,81 @@ var ACCENTS = ['var(--green)', 'var(--sun)', '#3f7d2e', 'var(--soil)'];
     }).join('');
     dots.innerHTML = dotHtml;
 
-    var current = 0, timer;
+    var slides = [].slice.call(track.children);
+    var current = 0, timer = null;
+    var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    function goTo(index) {
-      var slides = track.children;
-      if (!slides.length) return;
-      if (index < 0) index = slides.length - 1;
-      if (index >= slides.length) index = 0;
-      current = index;
-      track.style.transform = 'translateX(-' + (current * 100) + '%)';
-      [].forEach.call(dots.children, function (d, i) {
-        d.classList.toggle('active', i === current);
+    function slideStep() {
+      return slides.length > 1 ? slides[1].offsetLeft - slides[0].offsetLeft : track.clientWidth;
+    }
+
+    function setActiveDot(i) {
+      [].forEach.call(dots.children, function (d, k) {
+        d.classList.toggle('active', k === i);
       });
     }
 
-    function nextSlide() { goTo(current + 1); }
-    function prevSlide() { goTo(current - 1); }
+    function maxScroll() { return track.scrollWidth - track.clientWidth; }
+    function atEnd() { return track.scrollLeft >= maxScroll() - 4; }
+
+    function goTo(index) {
+      var n = slides.length;
+      if (!n) return;
+      index = ((index % n) + n) % n;
+      current = index;
+      var left = slides[index].offsetLeft - slides[0].offsetLeft;
+      if (left > maxScroll()) left = maxScroll();
+      track.scrollTo({ left: left, behavior: reduceMotion ? 'auto' : 'smooth' });
+      setActiveDot(index);
+    }
+
+    function nextSlide() { if (atEnd()) goTo(0); else goTo(current + 1); }
+    function prevSlide() { if (track.scrollLeft <= 4) goTo(slides.length - 1); else goTo(current - 1); }
+
+    // \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0442\u043E\u0447\u0435\u043A \u043F\u0440\u0438 \u0440\u0443\u0447\u043D\u043E\u043C \u0441\u0432\u0430\u0439\u043F\u0435/\u0441\u043A\u0440\u043E\u043B\u043B\u0435
+    track.addEventListener('scroll', function () {
+      var i = atEnd() ? slides.length - 1 : Math.round(track.scrollLeft / slideStep());
+      if (i < 0) i = 0;
+      if (i >= slides.length) i = slides.length - 1;
+      if (i !== current) { current = i; setActiveDot(i); }
+    }, { passive: true });
 
     function startTimer() {
       stopTimer();
-      timer = setInterval(nextSlide, 5000);
+      if (reduceMotion || track.scrollWidth <= track.clientWidth + 4) return;
+      timer = setInterval(function () {
+        if (!document.hidden) nextSlide();
+      }, 5000);
     }
-    function stopTimer() { clearInterval(timer); }
+    function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
 
-    if (prev) prev.addEventListener('click', function () { stopTimer(); prevSlide(); startTimer(); });
-    if (next) next.addEventListener('click', function () { stopTimer(); nextSlide(); startTimer(); });
+    if (prev) prev.addEventListener('click', function () { prevSlide(); startTimer(); });
+    if (next) next.addEventListener('click', function () { nextSlide(); startTimer(); });
     dots.addEventListener('click', function (e) {
       var dot = e.target.closest('.carousel-dot');
-      if (dot) { stopTimer(); goTo(parseInt(dot.getAttribute('data-index'))); startTimer(); }
+      if (dot) { goTo(parseInt(dot.getAttribute('data-index'), 10)); startTimer(); }
     });
 
     var carousel = document.getElementById('reviewsCarousel');
     if (carousel) {
       carousel.addEventListener('mouseenter', stopTimer);
       carousel.addEventListener('mouseleave', startTimer);
+      carousel.addEventListener('touchstart', stopTimer, { passive: true });
+      carousel.addEventListener('touchend', startTimer, { passive: true });
+      carousel.addEventListener('focusin', stopTimer);
+      carousel.addEventListener('focusout', startTimer);
     }
 
-    if (reviews.length < 2) {
-      if (dots) dots.style.display = 'none';
-      if (prev) prev.style.display = 'none';
-      if (next) next.style.display = 'none';
-    } else {
-      startTimer();
+    // если все отзывы влезают без прокрутки — управление не нужно
+    function updateControls() {
+      var scrollable = track.scrollWidth > track.clientWidth + 4;
+      dots.style.display = scrollable ? '' : 'none';
+      if (prev) prev.style.display = scrollable ? '' : 'none';
+      if (next) next.style.display = scrollable ? '' : 'none';
+      if (scrollable) startTimer(); else stopTimer();
     }
+    updateControls();
+    window.addEventListener('resize', updateControls);
   });
 })();
 

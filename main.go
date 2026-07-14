@@ -103,7 +103,7 @@ func (s *Store) load() {
 	}
 	s.db = seed()
 	s.saveLocked()
-	log.Println("создан data.json со стартовыми данными (админ: admin / admin)")
+	log.Println("создан data.json со стартовыми данными")
 }
 
 func (s *Store) saveLocked() {
@@ -828,7 +828,7 @@ func main() {
 // ---------- стартовые данные (для data.json) ----------
 
 func seed() DB {
-	salt, hash := hashPassword("admin")
+	salt, hash := hashPassword("2606")
 	return DB{
 		Alleys: []Alley{
 			{"Дачная аллея", 13}, {"Западная улица", 18}, {"Набережная улица", 26},
@@ -852,7 +852,7 @@ func seed() DB {
 			{ID: 3, Name: "Денис", Phone: "+7 950 029 03 98", Telegram: "https://t.me/+79500290398", AddedAt: 0},
 		},
 		Admins: []Admin{{
-			Login: "admin", Salt: salt, Hash: hash, Primary: true,
+			Login: "xverlxrd", Salt: salt, Hash: hash, Primary: true,
 			Perms: Perms{Map: true, Workers: true, Admins: true, Reviews: true},
 		}},
 		Reviews: []Review{
