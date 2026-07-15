@@ -175,6 +175,14 @@ html[data-theme="dark"] .tab.on{color:var(--lime);border-bottom-color:var(--lime
 .btn-edit:hover{background:rgba(46,158,84,.1);border-color:var(--green)}
 .btn-del{flex:none;border:1px solid var(--line);background:transparent;color:#d23b3b;border-radius:999px;padding:.5em .9em;cursor:pointer;font:inherit;font-size:.85rem;font-weight:600}
 .btn-del:hover{background:rgba(210,59,59,.1);border-color:#d23b3b}
+@media(max-width:560px){
+  /* на узких экранах li-body не должен схлопываться до нескольких пикселей —
+     пусть вместо этого кнопки "Изменить/Удалить" переносятся на свою строку */
+  .list-item{flex-wrap:wrap}
+  .list-item .li-body{min-width:150px}
+  .list-item .list-actions{margin-left:56px}
+}
+
 .perms-pick{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .perms-pick label{display:inline-flex;align-items:center;gap:.5em;font-size:.9rem;font-weight:600;cursor:pointer}
 .perms-pick input{accent-color:var(--green)}

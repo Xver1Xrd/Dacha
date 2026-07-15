@@ -315,7 +315,7 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
 
 /* ---------- floating mobile call ---------- */
 .fab{
-  position:fixed;right:18px;bottom:18px;z-index:60;
+  position:fixed;left:18px;bottom:18px;z-index:60;
   display:inline-flex;align-items:center;gap:.55em;
   background:var(--sun);color:var(--on-sun);font-family:'Onest',sans-serif;font-weight:700;
   padding:.85em 1.25em;border-radius:999px;box-shadow:0 14px 30px -10px rgba(255,178,0,.9);
@@ -389,7 +389,7 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .card-why,.card-rev{padding:22px 18px}
   .phone-line{padding:14px}
   .pl-num{font-size:1.05rem}
-  .fab{right:14px;bottom:14px;padding:.8em 1.15em}
+  .fab{left:14px;bottom:14px;padding:.8em 1.15em}
 }
 @media(max-width:360px){
   .bar-call-text{display:none}
