@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1.4
+# Dockerfile.frontend - Angie/nginx static server + proxy to backend
+
+ARG BASE_IMAGE=docker.io/crashpoint/angie:latest
+FROM ${BASE_IMAGE}
+LABEL org.opencontainers.image.source="https://git.k8s.crashpoint.ru/xver1xrd/dacha"
+
+WORKDIR /var/www/html
+COPY index.html admin.html css/ js/ ./
+COPY frontend/nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 8080
+USER angie
+CMD ["nginx", "-g", "daemon off;"]

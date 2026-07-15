@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dacha
+  namespace: xver1xrd
+  labels:
+    app: dacha
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dacha
+  namespace: xver1xrd
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dacha
+  namespace: xver1xrd
+subjects:
+  - kind: ServiceAccount
+    name: dacha
+    namespace: xver1xrd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dacha

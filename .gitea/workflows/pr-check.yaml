@@ -1,0 +1,41 @@
+# .gitea/workflows/pr-check.yaml
+# Проверка сборки при pull request
+
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: alpine-latest
+    steps:
+      - name: Checkout
+        shell: sh
+        run: |
+          set -eu
+          apk add --no-cache git
+          git clone --depth=1 \
+            --config "http.extraheader=Authorization: Basic $(printf 'x-token:%s' '${{ github.token }}' | base64)" \
+            "https://git.k8s.crashpoint.ru/${{ github.repository }}.git" \
+            --branch "${{ github.ref_name }}" .
+
+      - name: Setup Docker Buildx
+        shell: sh
+        run: |
+          set -eu
+          docker buildx create --name builder-gitea --use --bootstrap || true
+          docker buildx use builder-gitea
+
+      - name: Build backend (dry-run)
+        shell: sh
+        run: |
+          set -eu
+          docker buildx build --platform linux/amd64 -f Dockerfile.backend .
+
+      - name: Build frontend (dry-run)
+        shell: sh
+        run: |
+          set -eu
+          docker buildx build --platform linux/amd64 -f Dockerfile.frontend .

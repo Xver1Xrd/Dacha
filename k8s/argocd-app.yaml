@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dacha
+  namespace: argocd
+spec:
+  project: xver1xrd
+  sources:
+    - repoURL: harbor.k8s.crashpoint.ru
+      chart: xver1xrd/dacha
+      targetRevision: '*'
+      helm:
+        valueFiles:
+          - $values/infra/dacha/values.yaml
+    - repoURL: https://git.k8s.crashpoint.ru/xver1xrd/values.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: xver1xrd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true

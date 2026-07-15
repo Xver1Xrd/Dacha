@@ -1,0 +1,112 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+env:
+  VAULT_ADDR: ${{ vars.VAULT_ADDR }}
+  VAULT_KV_PATH: ${{ vars.VAULT_KV_PATH }}
+  HARBOR_REGISTRY: ${{ vars.HARBOR_REGISTRY }}
+  HARBOR_ORG: ${{ vars.HARBOR_ORG }}
+  IMAGE_NAME: dacha
+
+jobs:
+  build:
+    runs-on: alpine-latest
+    env:
+      MATRIX_DOCKERFILE: Dockerfile
+      MATRIX_IMAGE_NAME: dacha-tool
+    steps:
+      - name: Checkout
+        shell: sh
+        run: |
+          set -eu
+          apk add --no-cache -q git ca-certificates
+          git clone --depth=1 \
+            --config "http.extraheader=Authorization: Basic $(printf 'x-token:%s' '${{ github.token }}' | base64 | tr -d '\n')" \
+            "https://git.k8s.crashpoint.ru/${{ github.repository }}.git" \
+            --branch "${{ github.ref_name }}" .
+
+      - name: Setup Docker Buildx
+        shell: sh
+        run: |
+          set -eu
+          if ! docker buildx inspect builder-gitea > /dev/null 2>&1; then
+            docker buildx create --name builder-gitea --use --bootstrap
+          fi
+          docker buildx use builder-gitea
+
+      - name: Auth in Vault
+        shell: sh
+        run: |
+          set -eu
+          RESP=$(curl -sS -X POST "${VAULT_ADDR}/v1/auth/approle/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"role_id\": \"${{ secrets.VAULT_ROLE_ID }}\", \"secret_id\": \"${{ secrets.VAULT_SECRET_ID }}\"}")
+          HTTP_CODE=$(echo "$RESP" | grep "HTTP_CODE:" | cut -d: -f2)
+          [ "$HTTP_CODE" = "200" ] || { echo "Vault auth failed: $HTTP_CODE"; exit 1; }
+          TOKEN=$(echo "$RESP" | grep -v HTTP_CODE | jq -r '.auth.client_token // empty')
+          [ -n "$TOKEN" ] || { echo "Пустой Vault token"; exit 1; }
+          echo "VAULT_TOKEN=${TOKEN}" >> $GITHUB_ENV
+
+      - name: Login to Harbor
+        shell: sh
+        run: |
+          set -eu
+          CREDS=$(curl -sS -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR}/v1/${VAULT_KV_PATH%/}/harbor")
+          USER=$(echo "$CREDS" | jq -r '.data.data.robot_name // empty')
+          PASS=$(echo "$CREDS" | jq -r '.data.data.robot_secret // empty')
+          [ -n "$USER" ] || { echo "Нет Harbor credentials"; exit 1; }
+          echo "$PASS" | docker login "${HARBOR_REGISTRY}" --username "$USER" --password-stdin
+
+      - name: Build and Push Image
+        shell: sh
+        run: |
+          set -eu
+          BUILD_NUM=${{ github.run_number }}
+          SHA=${{ github.sha }}
+          IMG="${HARBOR_REGISTRY}/${HARBOR_ORG}/${IMAGE_NAME}"
+          TAGS="--tag ${IMG}:build-${BUILD_NUM} --tag ${IMG}:${SHA:0:8}"
+          [ "${{ github.ref }}" = "refs/heads/main" ] && TAGS="${TAGS} --tag ${IMG}:latest"
+          docker buildx build \
+            --push \
+            --platform linux/amd64 \
+            --cache-to "type=inline" \
+            --cache-from "type=registry,ref=${IMG}:latest" \
+            ${TAGS} .
+          echo "Собран: ${IMG}:build-${BUILD_NUM}"
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: alpine-latest
+    steps:
+      - name: Checkout values repo
+        shell: sh
+        run: |
+          set -eu
+          git clone --depth=1 \
+            --config "http.extraheader=Authorization: Basic $(printf 'x-token:%s' '${{ github.token }}' | base64)" \
+            "https://git.k8s.crashpoint.ru/xver1xrd/values.git"
+          cd dacha-values
+          git checkout main
+
+      - name: Update image tag
+        shell: sh
+        run: |
+          set -eu
+          cd dacha-values
+          SHA=${{ github.sha }}
+          yq eval ".image.tag = \"${SHA}\"" -i infra/dacha/values.yaml
+          git config user.name "Gitea Bot"
+          git config user.email "gitea@crashpoint.ru"
+          git add infra/dacha/values.yaml
+          git commit -m "chore: update dacha image tag to ${{ github.sha }}" || true
+          git push
+
+      - name: Wait for rollout
+        shell: sh
+        run: |
+          kubectl rollout status deployment/dacha -n xver1xrd --timeout=300s || true

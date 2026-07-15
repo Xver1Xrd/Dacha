@@ -1,0 +1,29 @@
+image:
+  repository: harbor.k8s.crashpoint.ru/xver1xrd/dacha
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: harbor-pull-secret
+
+zeptalab:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+pvc:
+  storage: 1Gi
+  storageClassName: local-path
+
+ingress:
+  enabled: true
+  host: dacha.k8s.crashpoint.ru
+  apiHost: dacha-api.k8s.crashpoint.ru
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  className: nginx
