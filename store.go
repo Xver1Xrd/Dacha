@@ -55,7 +55,8 @@ func (db *Database) migrate(ctx context.Context) error {
 		name TEXT NOT NULL,
 		text TEXT NOT NULL,
 		stars INTEGER NOT NULL DEFAULT 5,
-		color TEXT NOT NULL DEFAULT ''
+		color TEXT NOT NULL DEFAULT '',
+		position INTEGER NOT NULL DEFAULT 0
 	);
 	CREATE TABLE IF NOT EXISTS admins (
 		login TEXT PRIMARY KEY,
@@ -69,7 +70,14 @@ func (db *Database) migrate(ctx context.Context) error {
 		login TEXT NOT NULL,
 		expires_at TIMESTAMPTZ NOT NULL
 	);
-	ALTER TABLE workers ADD COLUMN IF NOT EXISTS clients INTEGER NOT NULL DEFAULT 0;`
+	ALTER TABLE workers ADD COLUMN IF NOT EXISTS clients INTEGER NOT NULL DEFAULT 0;
+	DO $$
+	BEGIN
+		IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reviews' AND column_name='position') THEN
+			ALTER TABLE reviews ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+			UPDATE reviews SET position = id;
+		END IF;
+	END $$;`
 	if _, err := db.pool.Exec(ctx, schema); err != nil {
 		return err
 	}
@@ -106,9 +114,9 @@ func (db *Database) seed(ctx context.Context) {
 	db.pool.Exec(ctx, "INSERT INTO admins(login,salt,hash,is_primary,perms) VALUES($1,$2,$3,true,$4) ON CONFLICT DO NOTHING",
 		seedAdminLogin, salt, hash, string(perms))
 
-	for _, r := range seedReviews {
-		db.pool.Exec(ctx, "INSERT INTO reviews(name,text,stars,color) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-			r.Name, r.Text, r.Stars, r.Color)
+	for i, r := range seedReviews {
+		db.pool.Exec(ctx, "INSERT INTO reviews(name,text,stars,color,position) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+			r.Name, r.Text, r.Stars, r.Color, i)
 	}
 }
 
@@ -209,7 +217,7 @@ func (db *Database) RemoveWorker(ctx context.Context, id int) error {
 // --- отзывы ---
 
 func (db *Database) GetReviews(ctx context.Context) ([]Review, error) {
-	rows, err := db.pool.Query(ctx, "SELECT id,name,text,stars,color FROM reviews ORDER BY id")
+	rows, err := db.pool.Query(ctx, "SELECT id,name,text,stars,color FROM reviews ORDER BY position")
 	if err != nil {
 		return nil, err
 	}
@@ -228,9 +236,34 @@ func (db *Database) GetReviews(ctx context.Context) ([]Review, error) {
 func (db *Database) AddReview(ctx context.Context, name, text string, stars int, color string) (int, error) {
 	var id int
 	err := db.pool.QueryRow(ctx,
-		"INSERT INTO reviews(name,text,stars,color) VALUES($1,$2,$3,$4) RETURNING id",
+		"INSERT INTO reviews(name,text,stars,color,position) VALUES($1,$2,$3,$4, COALESCE((SELECT MAX(position)+1 FROM reviews),0)) RETURNING id",
 		name, text, stars, color).Scan(&id)
 	return id, err
+}
+
+func (db *Database) MoveReview(ctx context.Context, id int, direction string) error {
+	var curPos int
+	if err := db.pool.QueryRow(ctx, "SELECT position FROM reviews WHERE id=$1", id).Scan(&curPos); err != nil {
+		return err
+	}
+	var neighborID, neighborPos int
+	var err error
+	if direction == "up" {
+		err = db.pool.QueryRow(ctx, "SELECT id,position FROM reviews WHERE position < $1 ORDER BY position DESC LIMIT 1", curPos).Scan(&neighborID, &neighborPos)
+	} else {
+		err = db.pool.QueryRow(ctx, "SELECT id,position FROM reviews WHERE position > $1 ORDER BY position ASC LIMIT 1", curPos).Scan(&neighborID, &neighborPos)
+	}
+	if err == pgx.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := db.pool.Exec(ctx, "UPDATE reviews SET position=$1 WHERE id=$2", neighborPos, id); err != nil {
+		return err
+	}
+	_, err = db.pool.Exec(ctx, "UPDATE reviews SET position=$1 WHERE id=$2", curPos, neighborID)
+	return err
 }
 
 func (db *Database) EditReview(ctx context.Context, id int, name, text string, stars int, color string) error {

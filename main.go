@@ -140,6 +140,7 @@ type dataStore interface {
 	AddReview(ctx context.Context, name, text string, stars int, color string) (int, error)
 	EditReview(ctx context.Context, id int, name, text string, stars int, color string) error
 	RemoveReview(ctx context.Context, id int) (bool, error)
+	MoveReview(ctx context.Context, id int, direction string) error
 	SetWork(ctx context.Context, key string, rec *WorkRec) error
 }
 
@@ -342,6 +343,31 @@ func (s *Store) RemoveReview(_ context.Context, id int) (bool, error) {
 		s.saveLocked()
 	}
 	return removed, nil
+}
+
+func (s *Store) MoveReview(_ context.Context, id int, direction string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := -1
+	for i, r := range s.db.Reviews {
+		if r.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return pgx.ErrNoRows
+	}
+	swapWith := idx - 1
+	if direction == "down" {
+		swapWith = idx + 1
+	}
+	if swapWith < 0 || swapWith >= len(s.db.Reviews) {
+		return nil
+	}
+	s.db.Reviews[idx], s.db.Reviews[swapWith] = s.db.Reviews[swapWith], s.db.Reviews[idx]
+	s.saveLocked()
+	return nil
 }
 
 func (s *Store) SetWork(_ context.Context, key string, rec *WorkRec) error {
@@ -762,6 +788,32 @@ func (srv *Server) handleReviewsEdit(w http.ResponseWriter, r *http.Request, _ s
 	writeJSON(w, 200, map[string]string{"ok": "1"})
 }
 
+// POST /api/reviews/{id}/move  {direction: "up"|"down"}
+func (srv *Server) handleReviewsMove(w http.ResponseWriter, r *http.Request, _ string) {
+	id := parseInt(r.PathValue("id"))
+	if id == 0 {
+		writeJSON(w, 400, map[string]string{"error": "неверный id"})
+		return
+	}
+	var in struct {
+		Direction string `json:"direction"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || (in.Direction != "up" && in.Direction != "down") {
+		writeJSON(w, 400, map[string]string{"error": "укажите direction: up или down"})
+		return
+	}
+	err := srv.store.MoveReview(r.Context(), id, in.Direction)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "не найден"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
 // POST /api/works  {key, rec}  (rec == null -> удалить)
 func (srv *Server) handleWorks(w http.ResponseWriter, r *http.Request, _ string) {
 	var in struct {
@@ -842,6 +894,7 @@ func buildHandler(srv *Server) http.Handler {
 	mux.HandleFunc("POST /api/reviews", srv.requirePerm("reviews", srv.handleReviewsAdd))
 	mux.HandleFunc("DELETE /api/reviews/{id}", srv.requirePerm("reviews", srv.handleReviewsDel))
 	mux.HandleFunc("PUT /api/reviews/{id}", srv.requirePerm("reviews", srv.handleReviewsEdit))
+	mux.HandleFunc("POST /api/reviews/{id}/move", srv.requirePerm("reviews", srv.handleReviewsMove))
 
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 

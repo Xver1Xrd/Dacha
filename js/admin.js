@@ -287,18 +287,21 @@
 
   function renderReviews() {
     var list = S.getReviews();
-    var html = list.map(function (r) {
+    var html = list.map(function (r, i) {
       var stars = '';
-      for (var i = 0; i < 5; i++) {
-        stars += '<svg viewBox="0 0 24 24" fill="' + (i < r.stars ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--sun)"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 16.9 5.7 21.4 8 14 2 9.4h7.6z"/></svg>';
+      for (var j = 0; j < 5; j++) {
+        stars += '<svg viewBox="0 0 24 24" fill="' + (j < r.stars ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--sun)"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 16.9 5.7 21.4 8 14 2 9.4h7.6z"/></svg>';
       }
       var colorStyle = r.color ? 'style="background:' + r.color + '"' : '';
+      var upBtn = i > 0 ? '<button class="btn-edit" data-move-up="' + r.id + '" type="button" title="Выше" aria-label="Переместить выше">&uarr;</button>' : '';
+      var downBtn = i < list.length - 1 ? '<button class="btn-edit" data-move-down="' + r.id + '" type="button" title="Ниже" aria-label="Переместить ниже">&darr;</button>' : '';
       return '<div class="list-item">' +
         '<span class="li-ava" ' + colorStyle + '>' + esc(initials(r.name)) + '</span>' +
         '<span class="li-body"><span class="li-name">' + esc(r.name) + '</span>' +
         '<span class="li-meta">' + stars + '</span>' +
         '<span class="li-text" style="font-size:.85rem;color:var(--soil-soft);margin-top:4px;display:block;line-height:1.3">' + esc(r.text) + '</span></span>' +
         '<div class="list-actions">' +
+        upBtn + downBtn +
         '<button class="btn-edit" data-re="' + r.id + '" type="button">✎</button>' +
         '<button class="btn-del" data-ri="' + r.id + '" type="button">Удалить</button></div>' +
         '</div>';
@@ -324,6 +327,16 @@
     }
   });
   $('reviewsList').addEventListener('click', function (e) {
+    var up = e.target.closest('[data-move-up]');
+    if (up) {
+      S.moveReview(up.getAttribute('data-move-up'), 'up').then(function () { renderReviews(); });
+      return;
+    }
+    var down = e.target.closest('[data-move-down]');
+    if (down) {
+      S.moveReview(down.getAttribute('data-move-down'), 'down').then(function () { renderReviews(); });
+      return;
+    }
     var b = e.target.closest('[data-ri]');
     if (b) {
       if (confirm('Удалить отзыв?')) {

@@ -114,6 +114,10 @@
       return api('/reviews/' + encodeURIComponent(id), { method: 'PUT', body: { name: name, text: text, stars: stars, color: color || '' } })
         .then(function (r) { return r.ok; })
         .then(function (ok) { return loadData().then(function () { return ok; }); });
+    },
+    moveReview: function (id, direction) {
+      return api('/reviews/' + encodeURIComponent(id) + '/move', { method: 'POST', body: { direction: direction } })
+        .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
     }
   };
 

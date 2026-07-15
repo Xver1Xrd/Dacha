@@ -109,6 +109,64 @@ func TestStoreReviewsCRUD(t *testing.T) {
 	}
 }
 
+func TestStoreMoveReview(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	id1, _ := s.AddReview(ctx, "Первый", "текст1", 5, "")
+	id2, _ := s.AddReview(ctx, "Второй", "текст2", 5, "")
+	id3, _ := s.AddReview(ctx, "Третий", "текст3", 5, "")
+
+	order := func() []int {
+		reviews, _ := s.GetReviews(ctx)
+		out := make([]int, 0, len(reviews))
+		for _, r := range reviews {
+			if r.ID == id1 || r.ID == id2 || r.ID == id3 {
+				out = append(out, r.ID)
+			}
+		}
+		return out
+	}
+
+	if got := order(); got[0] != id1 || got[1] != id2 || got[2] != id3 {
+		t.Fatalf("неожиданный стартовый порядок: %v", got)
+	}
+
+	if err := s.MoveReview(ctx, id2, "up"); err != nil {
+		t.Fatalf("MoveReview up: %v", err)
+	}
+	if got := order(); got[0] != id2 || got[1] != id1 || got[2] != id3 {
+		t.Fatalf("после move up ожидали [id2,id1,id3], получили %v", got)
+	}
+
+	if err := s.MoveReview(ctx, id2, "down"); err != nil {
+		t.Fatalf("MoveReview down: %v", err)
+	}
+	if got := order(); got[0] != id1 || got[1] != id2 || got[2] != id3 {
+		t.Fatalf("после move down ожидали вернуться к [id1,id2,id3], получили %v", got)
+	}
+
+	// первый элемент нельзя подвинуть выше - должен быть no-op, без ошибки
+	if err := s.MoveReview(ctx, id1, "up"); err != nil {
+		t.Fatalf("MoveReview up на первом элементе: %v", err)
+	}
+	if got := order(); got[0] != id1 {
+		t.Fatalf("первый элемент не должен был сдвинуться: %v", got)
+	}
+
+	// последний элемент нельзя подвинуть ниже - тоже no-op
+	if err := s.MoveReview(ctx, id3, "down"); err != nil {
+		t.Fatalf("MoveReview down на последнем элементе: %v", err)
+	}
+	if got := order(); got[2] != id3 {
+		t.Fatalf("последний элемент не должен был сдвинуться: %v", got)
+	}
+
+	if err := s.MoveReview(ctx, 999999, "up"); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MoveReview на несуществующем id должен вернуть pgx.ErrNoRows, получили %v", err)
+	}
+}
+
 func TestStoreAdminsDuplicateLogin(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

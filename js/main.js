@@ -17,67 +17,122 @@ var ACCENTS = ['var(--green)', 'var(--sun)', '#3f7d2e', 'var(--soil)'];
   window.SNTStore.ready(function () {
     var reviews = window.SNTStore.getReviews();
     if (!reviews.length) { track.innerHTML = '<p class="muted" style="text-align:center;padding:2rem 0">Пока нет отзывов.</p>'; return; }
-    var slidesHtml = reviews.map(function (r) {
+
+    function slideHtml(r, isClone) {
       var stars = '';
       for (var j = 0; j < 5; j++) {
         stars += '<svg viewBox="0 0 24 24" fill="' + (j < r.stars ? 'currentColor' : 'none') + '" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--sun)"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.4L12 16.9 5.7 21.4 8 14 2 9.4h7.6z"/></svg>';
       }
       var colorStyle = r.color ? 'style="background:' + esc(r.color) + '"' : '';
-      return '<div class="carousel-slide card-rev">' +
+      var hidden = isClone ? ' aria-hidden="true"' : '';
+      return '<div class="carousel-slide card-rev"' + hidden + '>' +
         '<span class="quote-mark">\u00AB</span>' +
         '<div class="stars" aria-label="' + r.stars + ' \u0438\u0437 5">' + stars + '</div>' +
         '<p class="txt">' + esc(r.text) + '</p>' +
         '<div class="rev-author"><span class="rev-ava" ' + colorStyle + '>' + esc(initName(r.name)) + '</span>' +
         '<span class="rev-meta"><b>' + esc(r.name) + '</b><span>\u0421\u041D\u0422 \u00AB\u041C\u0438\u0445\u0430\u0439\u043B\u043E\u0432\u0441\u043A\u043E\u0435\u00BB</span></span></div></div>';
-    }).join('');
-    track.innerHTML = slidesHtml;
+    }
+
+    var numReal = reviews.length;
+    var realHtml = reviews.map(function (r) { return slideHtml(r, false); }).join('');
+    track.innerHTML = realHtml;
+
     var dotHtml = reviews.map(function (_, i) {
       return '<button class="carousel-dot' + (i === 0 ? ' active' : '') + '" data-index="' + i + '" type="button" aria-label="\u041E\u0442\u0437\u044B\u0432 ' + (i + 1) + '"></button>';
     }).join('');
     dots.innerHTML = dotHtml;
 
+    // \u0437\u0430\u0446\u0438\u043A\u043B\u0438\u0432\u0430\u0435\u043c \u0442\u043e\u043b\u044c\u043a\u043e \u0435\u0441\u043b\u0438 \u0440\u0435\u0430\u043b\u044c\u043d\u043e \u0435\u0441\u0442\u044c \u043f\u0440\u043e\u043a\u0440\u0443\u0442\u043a\u0430 \u0438 \u0431\u043e\u043b\u044c\u0448\u0435 \u043e\u0434\u043d\u043e\u0433\u043e \u043e\u0442\u0437\u044b\u0432\u0430 -
+    // \u043a\u043b\u043e\u043d\u0438\u0440\u0443\u0435\u043c \u043d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u043a\u0430\u0440\u0442\u043e\u0447\u0435\u043a \u0441 \u043a\u0430\u0436\u0434\u043e\u0439 \u0441\u0442\u043e\u0440\u043e\u043d\u044b, \u0447\u0442\u043e\u0431\u044b \u0441\u0432\u0430\u0439\u043f \u201c\u0443\u0442\u044b\u043a\u0430\u043b\u0441\u044f\u201d
+    // \u043d\u0435 \u0432 \u043a\u0440\u0430\u0439, \u0430 \u0431\u0435\u0441\u0448\u043e\u0432\u043d\u043e \u043f\u0435\u0440\u0435\u0442\u0435\u043a\u0430\u043b \u043e\u0431\u0440\u0430\u0442\u043d\u043e \u043a \u043d\u0430\u0447\u0430\u043b\u0443
+    var scrollable = track.scrollWidth > track.clientWidth + 4;
+    // клонов должно хватать, чтобы прокрутка физически могла дотянуться до
+    // клон-зоны - на широких экранах в кадре сразу несколько карточек, и
+    // фиксированных 1-2 клонов недостаточно (браузер просто не даёт
+    // проскроллить дальше, если после последней карточки не хватает "хвоста")
+    var realSlides = [].slice.call(track.children);
+    var cardSpan = realSlides.length > 1 ? realSlides[1].offsetLeft - realSlides[0].offsetLeft : track.clientWidth;
+    var perScreen = Math.max(1, Math.ceil(track.clientWidth / cardSpan));
+    var CLONES = Math.min(numReal - 1, perScreen);
+    var loopable = scrollable && numReal > 1 && CLONES > 0;
+
+    if (loopable) {
+      var headClones = reviews.slice(-CLONES).map(function (r) { return slideHtml(r, true); }).join('');
+      var tailClones = reviews.slice(0, CLONES).map(function (r) { return slideHtml(r, true); }).join('');
+      track.innerHTML = headClones + realHtml + tailClones;
+    }
+
     var slides = [].slice.call(track.children);
-    var current = 0, timer = null;
+    var realStart = loopable ? CLONES : 0;
+    var current = realStart, timer = null;
     var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     function slideStep() {
       return slides.length > 1 ? slides[1].offsetLeft - slides[0].offsetLeft : track.clientWidth;
     }
 
-    function setActiveDot(i) {
+    function realIndexOf(visualIndex) {
+      return ((visualIndex - realStart) % numReal + numReal) % numReal;
+    }
+
+    function setActiveDot(realIndex) {
       [].forEach.call(dots.children, function (d, k) {
-        d.classList.toggle('active', k === i);
+        d.classList.toggle('active', k === realIndex);
       });
     }
 
     function maxScroll() { return track.scrollWidth - track.clientWidth; }
-    function atEnd() { return track.scrollLeft >= maxScroll() - 4; }
 
-    function goTo(index) {
-      var n = slides.length;
-      if (!n) return;
-      index = ((index % n) + n) % n;
-      current = index;
+    function scrollToIndex(index, smooth) {
       var left = slides[index].offsetLeft - slides[0].offsetLeft;
+      if (left < 0) left = 0;
       if (left > maxScroll()) left = maxScroll();
-      track.scrollTo({ left: left, behavior: reduceMotion ? 'auto' : 'smooth' });
-      setActiveDot(index);
+      track.scrollTo({ left: left, behavior: smooth && !reduceMotion ? 'smooth' : 'auto' });
     }
 
-    function nextSlide() { if (atEnd()) goTo(0); else goTo(current + 1); }
-    function prevSlide() { if (track.scrollLeft <= 4) goTo(slides.length - 1); else goTo(current - 1); }
+    function goTo(index) {
+      if (loopable) {
+        if (index < 0) index = 0;
+        if (index > slides.length - 1) index = slides.length - 1;
+      } else {
+        index = ((index % numReal) + numReal) % numReal;
+      }
+      current = index;
+      scrollToIndex(index, true);
+      setActiveDot(realIndexOf(index));
+    }
 
-    // \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0442\u043E\u0447\u0435\u043A \u043F\u0440\u0438 \u0440\u0443\u0447\u043D\u043E\u043C \u0441\u0432\u0430\u0439\u043F\u0435/\u0441\u043A\u0440\u043E\u043B\u043B\u0435
+    function nextSlide() { goTo(current + 1); }
+    function prevSlide() { goTo(current - 1); }
+
+    // \u043f\u043e\u0441\u043b\u0435 \u0442\u043e\u0433\u043e \u043a\u0430\u043a \u0441\u043a\u0440\u043e\u043b\u043b "\u0443\u0441\u0442\u0430\u043a\u0430\u043d\u0438\u043b\u0441\u044f" - \u0435\u0441\u043b\u0438 \u0443\u0435\u0445\u0430\u043b\u0438 \u0432 \u043a\u043b\u043e\u043d-\u0437\u043e\u043d\u0443,
+    // \u0431\u0435\u0441\u0448\u043e\u0432\u043d\u043e \u0442\u0435\u043b\u0435\u043f\u043e\u0440\u0442\u0438\u0440\u0443\u0435\u043c\u0441\u044f \u043d\u0430 \u0442\u0430\u043a\u043e\u0439 \u0436\u0435 \u0440\u0435\u0430\u043b\u044c\u043d\u044b\u0439 \u0441\u043b\u0430\u0439\u0434
+    function settle() {
+      if (!loopable) return;
+      var i = Math.max(0, Math.min(slides.length - 1, Math.round(track.scrollLeft / slideStep())));
+      if (i >= realStart + numReal) {
+        current = i - numReal;
+        scrollToIndex(current, false);
+      } else if (i < realStart) {
+        current = i + numReal;
+        scrollToIndex(current, false);
+      } else {
+        current = i;
+      }
+      setActiveDot(realIndexOf(current));
+    }
+
+    var settleTimer = null;
     track.addEventListener('scroll', function () {
-      var i = atEnd() ? slides.length - 1 : Math.round(track.scrollLeft / slideStep());
-      if (i < 0) i = 0;
-      if (i >= slides.length) i = slides.length - 1;
-      if (i !== current) { current = i; setActiveDot(i); }
+      var i = Math.max(0, Math.min(slides.length - 1, Math.round(track.scrollLeft / slideStep())));
+      setActiveDot(realIndexOf(i));
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(settle, 120);
     }, { passive: true });
 
     function startTimer() {
       stopTimer();
-      if (reduceMotion || track.scrollWidth <= track.clientWidth + 4) return;
+      if (reduceMotion || !scrollable) return;
       timer = setInterval(function () {
         if (!document.hidden) nextSlide();
       }, 5000);
@@ -88,7 +143,7 @@ var ACCENTS = ['var(--green)', 'var(--sun)', '#3f7d2e', 'var(--soil)'];
     if (next) next.addEventListener('click', function () { nextSlide(); startTimer(); });
     dots.addEventListener('click', function (e) {
       var dot = e.target.closest('.carousel-dot');
-      if (dot) { goTo(parseInt(dot.getAttribute('data-index'), 10)); startTimer(); }
+      if (dot) { goTo(realStart + parseInt(dot.getAttribute('data-index'), 10)); startTimer(); }
     });
 
     var carousel = document.getElementById('reviewsCarousel');
@@ -101,16 +156,20 @@ var ACCENTS = ['var(--green)', 'var(--sun)', '#3f7d2e', 'var(--soil)'];
       carousel.addEventListener('focusout', startTimer);
     }
 
-    // если все отзывы влезают без прокрутки — управление не нужно
+    // \u0435\u0441\u043b\u0438 \u0432\u0441\u0435 \u043e\u0442\u0437\u044b\u0432\u044b \u0432\u043b\u0435\u0437\u0430\u044e\u0442 \u0431\u0435\u0437 \u043f\u0440\u043e\u043a\u0440\u0443\u0442\u043a\u0438 \u2014 \u0443\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u043d\u0435 \u043d\u0443\u0436\u043d\u043e
     function updateControls() {
-      var scrollable = track.scrollWidth > track.clientWidth + 4;
       dots.style.display = scrollable ? '' : 'none';
       if (prev) prev.style.display = scrollable ? '' : 'none';
       if (next) next.style.display = scrollable ? '' : 'none';
       if (scrollable) startTimer(); else stopTimer();
     }
     updateControls();
-    window.addEventListener('resize', updateControls);
+    window.addEventListener('resize', function () {
+      scrollToIndex(current, false);
+      updateControls();
+    });
+
+    if (loopable) scrollToIndex(realStart, false);
   });
 })();
 
