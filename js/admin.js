@@ -141,11 +141,12 @@
         var tag = a.primary ? '<span class="tag-primary">Главный</span>' : '';
         var perms = a.primary ? '' : renderPermBadge(a.perms || {});
         var del = a.primary ? '' : '<button class="btn-del" data-al="' + esc(a.login) + '" type="button">Удалить</button>';
+        var pass = '<button class="btn-edit" data-pw="' + esc(a.login) + '" type="button" title="Сменить пароль">🔑</button>';
         return '<div class="list-item">' +
           '<span class="li-ava">' + esc(initials(a.login)) + '</span>' +
           '<span class="li-body"><span class="li-name">' + esc(a.login) + tag + perms + '</span>' +
           '<span class="li-meta">пароль скрыт</span></span>' +
-          del + '</div>';
+          '<div class="list-actions">' + pass + del + '</div></div>';
       }).join('');
       $('adminsList').innerHTML = html;
     });
@@ -165,6 +166,17 @@
     });
   });
   $('adminsList').addEventListener('click', function (e) {
+    var pw = e.target.closest('[data-pw]');
+    if (pw) {
+      var login = pw.getAttribute('data-pw');
+      var newPass = prompt('Новый пароль для «' + login + '» (минимум 6 символов):');
+      if (newPass === null) return;
+      if (newPass.length < 6) { toast('Пароль должен быть не короче 6 символов'); return; }
+      S.setAdminPassword(login, newPass).then(function (ok) {
+        toast(ok ? 'Пароль изменён' : 'Не удалось сменить пароль');
+      });
+      return;
+    }
     var b = e.target.closest('[data-al]');
     if (!b) return;
     if (confirm('Удалить администратора?')) {

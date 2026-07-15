@@ -116,6 +116,7 @@ go test ./...
 | GET | `/api/session` | все | проверка текущей сессии |
 | GET / POST | `/api/admins` | admins | список / добавление администратора |
 | DELETE | `/api/admins/{login}` | admins | удаление администратора |
+| POST | `/api/admins/{login}/password` | admins | смена пароля администратора (`{"pass":"..."}`) |
 | POST | `/api/workers` | workers | добавление работника |
 | PUT / DELETE | `/api/workers/{id}` | workers | редактирование / удаление работника |
 | POST | `/api/works` | map | статус и описание работ по участку (`rec:null` — сброс) |

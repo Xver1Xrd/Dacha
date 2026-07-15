@@ -333,6 +333,18 @@ func (db *Database) AddAdmin(ctx context.Context, login, pass string, perms Perm
 	return err
 }
 
+func (db *Database) SetAdminPassword(ctx context.Context, login, pass string) error {
+	salt, hash := hashPassword(pass)
+	res, err := db.pool.Exec(ctx, "UPDATE admins SET salt=$1,hash=$2 WHERE login=$3", salt, hash, login)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (db *Database) RemoveAdmin(ctx context.Context, login string) (bool, error) {
 	res, err := db.pool.Exec(ctx, "DELETE FROM admins WHERE login=$1 AND NOT is_primary", login)
 	return res.RowsAffected() > 0, err

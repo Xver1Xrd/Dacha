@@ -83,6 +83,10 @@
       return api('/admins/' + encodeURIComponent(login), { method: 'DELETE' })
         .then(function (r) { return r.ok; });
     },
+    setAdminPassword: function (login, pass) {
+      return api('/admins/' + encodeURIComponent(login) + '/password', { method: 'POST', body: { pass: pass } })
+        .then(function (r) { return r.ok; });
+    },
 
     addWorker: function (name, phone, telegram, clients) {
       return api('/workers', { method: 'POST', body: { name: name, phone: phone, telegram: telegram, clients: clients || 0 } })

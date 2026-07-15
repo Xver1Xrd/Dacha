@@ -133,6 +133,7 @@ type dataStore interface {
 	GetAdminByLogin(ctx context.Context, login string) (*Admin, error)
 	AddAdmin(ctx context.Context, login, pass string, perms Perms) error
 	RemoveAdmin(ctx context.Context, login string) (bool, error)
+	SetAdminPassword(ctx context.Context, login, pass string) error
 	HasPerm(ctx context.Context, login, perm string) (bool, error)
 	AddWorker(ctx context.Context, name, phone, telegram string, clients int) (int, error)
 	EditWorker(ctx context.Context, id int, name, phone, telegram string, clients int) error
@@ -212,6 +213,21 @@ func (s *Store) AddAdmin(_ context.Context, login, pass string, perms Perms) err
 	s.db.Admins = append(s.db.Admins, Admin{Login: login, Salt: salt, Hash: hash, Perms: perms})
 	s.saveLocked()
 	return nil
+}
+
+func (s *Store) SetAdminPassword(_ context.Context, login, pass string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.db.Admins {
+		if s.db.Admins[i].Login == login {
+			salt, hash := hashPassword(pass)
+			s.db.Admins[i].Salt = salt
+			s.db.Admins[i].Hash = hash
+			s.saveLocked()
+			return nil
+		}
+	}
+	return pgx.ErrNoRows
 }
 
 func (s *Store) RemoveAdmin(_ context.Context, login string) (bool, error) {
@@ -640,6 +656,28 @@ func (srv *Server) handleAdminsDel(w http.ResponseWriter, r *http.Request, _ str
 	writeJSON(w, 200, map[string]bool{"removed": removed})
 }
 
+// POST /api/admins/{login}/password  {pass}
+func (srv *Server) handleAdminsPassword(w http.ResponseWriter, r *http.Request, _ string) {
+	login := r.PathValue("login")
+	var in struct {
+		Pass string `json:"pass"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || len(in.Pass) < minPassLen || len(in.Pass) > maxPassLen {
+		writeJSON(w, 400, map[string]string{"error": "пароль должен быть не короче 6 символов"})
+		return
+	}
+	err := srv.store.SetAdminPassword(r.Context(), login, in.Pass)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeJSON(w, 404, map[string]string{"error": "не найден"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"ok": "1"})
+}
+
 // POST /api/workers
 func (srv *Server) handleWorkersAdd(w http.ResponseWriter, r *http.Request, _ string) {
 	var in struct {
@@ -886,6 +924,7 @@ func buildHandler(srv *Server) http.Handler {
 	mux.HandleFunc("GET /api/admins", srv.requirePerm("admins", srv.handleAdminsList))
 	mux.HandleFunc("POST /api/admins", srv.requirePerm("admins", srv.handleAdminsAdd))
 	mux.HandleFunc("DELETE /api/admins/{login}", srv.requirePerm("admins", srv.handleAdminsDel))
+	mux.HandleFunc("POST /api/admins/{login}/password", srv.requirePerm("admins", srv.handleAdminsPassword))
 	mux.HandleFunc("POST /api/workers", srv.requirePerm("workers", srv.handleWorkersAdd))
 	mux.HandleFunc("PUT /api/workers/{id}", srv.requirePerm("workers", srv.handleWorkersEdit))
 	mux.HandleFunc("DELETE /api/workers/{id}", srv.requirePerm("workers", srv.handleWorkersDel))
