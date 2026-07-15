@@ -297,7 +297,7 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
 .phone-line .pl-ava{width:48px;height:48px;border-radius:50%;flex:none;display:grid;place-items:center;font-family:'Russo One',sans-serif;color:#fff;background:var(--accent,var(--green))}
 .phone-line .pl-body{flex:1;min-width:0}
 .phone-line .pl-name{display:block;font-weight:700;font-size:.92rem;color:rgba(255,255,255,.8)}
-.phone-line .pl-num{display:block;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.18rem;color:#fff;margin-top:1px}
+.phone-line .pl-num{display:block;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:clamp(.86rem,4.4vw,1.18rem);white-space:nowrap;color:#fff;margin-top:1px}
 .phone-line .pl-actions{display:flex;gap:8px;flex:none}
 .phone-line .pl-call,.phone-line .pl-tg{width:46px;height:46px;border-radius:50%;display:grid;place-items:center}
 .phone-line .pl-call{background:var(--sun);color:var(--on-sun);box-shadow:0 8px 18px -8px rgba(255,178,0,.9)}
@@ -319,10 +319,11 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   display:inline-flex;align-items:center;gap:.55em;
   background:var(--sun);color:var(--on-sun);font-family:'Onest',sans-serif;font-weight:700;
   padding:.85em 1.25em;border-radius:999px;box-shadow:0 14px 30px -10px rgba(255,178,0,.9);
-  transition:transform .16s ease,background .16s ease;
+  transition:transform .16s ease,background .16s ease,opacity .2s ease;
 }
 .fab:hover{background:var(--sun-d);transform:translateY(-2px)}
 .fab svg{width:1.2em;height:1.2em}
+.fab-hide{opacity:0;pointer-events:none;transform:translateY(8px)}
 
 /* ---------- reveal animations ---------- */
 .js .reveal{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
@@ -388,7 +389,6 @@ footer.foot{background:var(--soil);color:rgba(255,255,255,.72);padding:34px 0;fo
   .card-serv{padding:22px 18px}
   .card-why,.card-rev{padding:22px 18px}
   .phone-line{padding:14px}
-  .pl-num{font-size:1.05rem}
   .fab{left:14px;bottom:14px;padding:.8em 1.15em}
 }
 @media(max-width:360px){

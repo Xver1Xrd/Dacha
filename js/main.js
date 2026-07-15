@@ -183,6 +183,24 @@ if (themeBtn) {
   });
 }
 
+(function () {
+  var fab = document.querySelector('.fab');
+  if (!fab || !('IntersectionObserver' in window)) return;
+  // прячем плавающую кнопку звонка там, где рядом и так есть свои кнопки
+  // звонка (карточки работников, блок "Звоните - договоримся", футер) -
+  // иначе она перекрывает их на мобильных экранах
+  var zones = document.querySelectorAll('.greeters, .reviews, .contact, footer.foot');
+  if (!zones.length) return;
+  var visible = new Set();
+  var fabIO = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) visible.add(e.target); else visible.delete(e.target);
+    });
+    fab.classList.toggle('fab-hide', visible.size > 0);
+  }, { threshold: .01 });
+  zones.forEach(function (z) { fabIO.observe(z); });
+})();
+
 if ('IntersectionObserver' in window) {
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (e) {
