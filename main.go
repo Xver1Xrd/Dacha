@@ -39,6 +39,7 @@ type Worker struct {
 	Phone    string `json:"phone"`
 	Telegram string `json:"telegram,omitempty"`
 	AddedAt  int64  `json:"addedAt"`
+	Clients  int    `json:"clients"`
 }
 
 type WorkRec struct {
@@ -133,8 +134,8 @@ type dataStore interface {
 	AddAdmin(ctx context.Context, login, pass string, perms Perms) error
 	RemoveAdmin(ctx context.Context, login string) (bool, error)
 	HasPerm(ctx context.Context, login, perm string) (bool, error)
-	AddWorker(ctx context.Context, name, phone, telegram string) (int, error)
-	EditWorker(ctx context.Context, id int, name, phone, telegram string) error
+	AddWorker(ctx context.Context, name, phone, telegram string, clients int) (int, error)
+	EditWorker(ctx context.Context, id int, name, phone, telegram string, clients int) error
 	RemoveWorker(ctx context.Context, id int) error
 	AddReview(ctx context.Context, name, text string, stars int, color string) (int, error)
 	EditReview(ctx context.Context, id int, name, text string, stars int, color string) error
@@ -255,19 +256,19 @@ func (s *Store) HasPerm(_ context.Context, login, perm string) (bool, error) {
 	return false, nil
 }
 
-func (s *Store) AddWorker(_ context.Context, name, phone, telegram string) (int, error) {
+func (s *Store) AddWorker(_ context.Context, name, phone, telegram string, clients int) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := s.db.NextWorkerID
 	s.db.NextWorkerID++
 	s.db.Workers = append(s.db.Workers, Worker{
-		ID: id, Name: name, Phone: phone, Telegram: telegram, AddedAt: time.Now().UnixMilli(),
+		ID: id, Name: name, Phone: phone, Telegram: telegram, AddedAt: time.Now().UnixMilli(), Clients: clients,
 	})
 	s.saveLocked()
 	return id, nil
 }
 
-func (s *Store) EditWorker(_ context.Context, id int, name, phone, telegram string) error {
+func (s *Store) EditWorker(_ context.Context, id int, name, phone, telegram string, clients int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.db.Workers {
@@ -275,6 +276,7 @@ func (s *Store) EditWorker(_ context.Context, id int, name, phone, telegram stri
 			s.db.Workers[i].Name = name
 			s.db.Workers[i].Phone = phone
 			s.db.Workers[i].Telegram = telegram
+			s.db.Workers[i].Clients = clients
 			s.saveLocked()
 			return nil
 		}
@@ -614,14 +616,17 @@ func (srv *Server) handleAdminsDel(w http.ResponseWriter, r *http.Request, _ str
 
 // POST /api/workers
 func (srv *Server) handleWorkersAdd(w http.ResponseWriter, r *http.Request, _ string) {
-	var in struct{ Name, Phone, Telegram string }
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" ||
+	var in struct {
+		Name, Phone, Telegram string
+		Clients               int
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || in.Clients < 0 ||
 		!withinLimits(in.Name, maxNameLen) || !withinLimits(in.Phone, maxPhoneLen) || !withinLimits(in.Telegram, maxTelegramLen) {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя"})
 		return
 	}
 	id, err := srv.store.AddWorker(r.Context(),
-		strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), strings.TrimSpace(in.Telegram))
+		strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), strings.TrimSpace(in.Telegram), in.Clients)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "ошибка сервера"})
 		return
@@ -651,14 +656,17 @@ func (srv *Server) handleWorkersEdit(w http.ResponseWriter, r *http.Request, _ s
 		writeJSON(w, 400, map[string]string{"error": "неверный id"})
 		return
 	}
-	var in struct{ Name, Phone, Telegram string }
-	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" ||
+	var in struct {
+		Name, Phone, Telegram string
+		Clients               int
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || strings.TrimSpace(in.Name) == "" || in.Clients < 0 ||
 		!withinLimits(in.Name, maxNameLen) || !withinLimits(in.Phone, maxPhoneLen) || !withinLimits(in.Telegram, maxTelegramLen) {
 		writeJSON(w, 400, map[string]string{"error": "укажите имя"})
 		return
 	}
 	err := srv.store.EditWorker(r.Context(), id,
-		strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), strings.TrimSpace(in.Telegram))
+		strings.TrimSpace(in.Name), strings.TrimSpace(in.Phone), strings.TrimSpace(in.Telegram), in.Clients)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeJSON(w, 404, map[string]string{"error": "не найден"})
 		return

@@ -47,7 +47,8 @@ func (db *Database) migrate(ctx context.Context) error {
 		name TEXT NOT NULL,
 		phone TEXT NOT NULL DEFAULT '',
 		telegram TEXT NOT NULL DEFAULT '',
-		added_at BIGINT NOT NULL DEFAULT 0
+		added_at BIGINT NOT NULL DEFAULT 0,
+		clients INTEGER NOT NULL DEFAULT 0
 	);
 	CREATE TABLE IF NOT EXISTS reviews (
 		id SERIAL PRIMARY KEY,
@@ -67,7 +68,8 @@ func (db *Database) migrate(ctx context.Context) error {
 		token TEXT PRIMARY KEY,
 		login TEXT NOT NULL,
 		expires_at TIMESTAMPTZ NOT NULL
-	);`
+	);
+	ALTER TABLE workers ADD COLUMN IF NOT EXISTS clients INTEGER NOT NULL DEFAULT 0;`
 	if _, err := db.pool.Exec(ctx, schema); err != nil {
 		return err
 	}
@@ -97,8 +99,8 @@ func (db *Database) seed(ctx context.Context) {
 	}
 
 	for _, w := range seedWorkers {
-		db.pool.Exec(ctx, "INSERT INTO workers(name,phone,telegram,added_at) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-			w.Name, w.Phone, w.Telegram, now)
+		db.pool.Exec(ctx, "INSERT INTO workers(name,phone,telegram,added_at,clients) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+			w.Name, w.Phone, w.Telegram, now, w.Clients)
 	}
 
 	db.pool.Exec(ctx, "INSERT INTO admins(login,salt,hash,is_primary,perms) VALUES($1,$2,$3,true,$4) ON CONFLICT DO NOTHING",
@@ -163,7 +165,7 @@ func (db *Database) SetWork(ctx context.Context, key string, rec *WorkRec) error
 // --- работники ---
 
 func (db *Database) GetWorkers(ctx context.Context) ([]Worker, error) {
-	rows, err := db.pool.Query(ctx, "SELECT id,name,phone,telegram,added_at FROM workers ORDER BY id")
+	rows, err := db.pool.Query(ctx, "SELECT id,name,phone,telegram,added_at,clients FROM workers ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +173,7 @@ func (db *Database) GetWorkers(ctx context.Context) ([]Worker, error) {
 	var out []Worker
 	for rows.Next() {
 		var w Worker
-		if err := rows.Scan(&w.ID, &w.Name, &w.Phone, &w.Telegram, &w.AddedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.Name, &w.Phone, &w.Telegram, &w.AddedAt, &w.Clients); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -179,17 +181,17 @@ func (db *Database) GetWorkers(ctx context.Context) ([]Worker, error) {
 	return out, nil
 }
 
-func (db *Database) AddWorker(ctx context.Context, name, phone, telegram string) (int, error) {
+func (db *Database) AddWorker(ctx context.Context, name, phone, telegram string, clients int) (int, error) {
 	var id int
 	err := db.pool.QueryRow(ctx,
-		"INSERT INTO workers(name,phone,telegram,added_at) VALUES($1,$2,$3,$4) RETURNING id",
-		name, phone, telegram, time.Now().UnixMilli()).Scan(&id)
+		"INSERT INTO workers(name,phone,telegram,added_at,clients) VALUES($1,$2,$3,$4,$5) RETURNING id",
+		name, phone, telegram, time.Now().UnixMilli(), clients).Scan(&id)
 	return id, err
 }
 
-func (db *Database) EditWorker(ctx context.Context, id int, name, phone, telegram string) error {
+func (db *Database) EditWorker(ctx context.Context, id int, name, phone, telegram string, clients int) error {
 	res, err := db.pool.Exec(ctx,
-		"UPDATE workers SET name=$1,phone=$2,telegram=$3 WHERE id=$4", name, phone, telegram, id)
+		"UPDATE workers SET name=$1,phone=$2,telegram=$3,clients=$4 WHERE id=$5", name, phone, telegram, clients, id)
 	if err != nil {
 		return err
 	}

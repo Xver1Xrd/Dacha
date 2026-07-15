@@ -84,16 +84,16 @@
         .then(function (r) { return r.ok; });
     },
 
-    addWorker: function (name, phone, telegram) {
-      return api('/workers', { method: 'POST', body: { name: name, phone: phone, telegram: telegram } })
+    addWorker: function (name, phone, telegram, clients) {
+      return api('/workers', { method: 'POST', body: { name: name, phone: phone, telegram: telegram, clients: clients || 0 } })
         .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
     },
     removeWorker: function (id) {
       return api('/workers/' + encodeURIComponent(id), { method: 'DELETE' })
         .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
     },
-    editWorker: function (id, name, phone, telegram) {
-      return api('/workers/' + encodeURIComponent(id), { method: 'PUT', body: { name: name, phone: phone, telegram: telegram } })
+    editWorker: function (id, name, phone, telegram, clients) {
+      return api('/workers/' + encodeURIComponent(id), { method: 'PUT', body: { name: name, phone: phone, telegram: telegram, clients: clients || 0 } })
         .then(function (r) { return r.ok; }).then(function (ok) { return loadData().then(function () { return ok; }); });
     },
 

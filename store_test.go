@@ -38,11 +38,11 @@ func TestStoreWorkersCRUD(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	id, err := s.AddWorker(ctx, "Тест", "+7 000", "tg")
+	id, err := s.AddWorker(ctx, "Тест", "+7 000", "tg", 3)
 	if err != nil {
 		t.Fatalf("AddWorker: %v", err)
 	}
-	if err := s.EditWorker(ctx, id, "Тест2", "+7 111", "tg2"); err != nil {
+	if err := s.EditWorker(ctx, id, "Тест2", "+7 111", "tg2", 7); err != nil {
 		t.Fatalf("EditWorker: %v", err)
 	}
 	workers, _ := s.GetWorkers(ctx)
@@ -50,7 +50,7 @@ func TestStoreWorkersCRUD(t *testing.T) {
 	for _, w := range workers {
 		if w.ID == id {
 			found = true
-			if w.Name != "Тест2" || w.Phone != "+7 111" {
+			if w.Name != "Тест2" || w.Phone != "+7 111" || w.Clients != 7 {
 				t.Fatalf("работник не обновился: %+v", w)
 			}
 		}
@@ -59,7 +59,7 @@ func TestStoreWorkersCRUD(t *testing.T) {
 		t.Fatal("добавленный работник не найден")
 	}
 
-	if err := s.EditWorker(ctx, 999999, "x", "y", "z"); !errors.Is(err, pgx.ErrNoRows) {
+	if err := s.EditWorker(ctx, 999999, "x", "y", "z", 0); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("EditWorker на несуществующем id должен вернуть pgx.ErrNoRows, получили %v", err)
 	}
 

@@ -154,8 +154,8 @@ html[data-theme="dark"] .theme-toggle .i-moon{display:none}
      и удалите текст-инициал внутри .avatar */
 }
 .p-body{min-width:0;flex:1}
-.p-name{font-family:'Russo One',sans-serif;font-size:1.18rem;line-height:1.1}
-.p-role{font-size:.86rem;color:var(--soil-soft);font-weight:600;margin-top:2px}
+.p-name{display:block;font-family:'Russo One',sans-serif;font-size:1.18rem;line-height:1.1}
+.p-role{display:block;font-size:.86rem;color:var(--soil-soft);font-weight:600;margin-top:2px}
 .p-phone{
   display:inline-flex;align-items:center;gap:.45em;margin-top:10px;
   font-family:'JetBrains Mono',monospace;font-weight:700;font-size:1.02rem;color:var(--green-d);

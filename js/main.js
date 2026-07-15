@@ -123,16 +123,25 @@ var ACCENTS = ['var(--green)', 'var(--sun)', '#3f7d2e', 'var(--soil)'];
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
     });
   }
+  function pluralClients(n) {
+    var n100 = Math.abs(n) % 100, n10 = n100 % 10;
+    if (n100 > 10 && n100 < 20) return 'клиентов';
+    if (n10 > 1 && n10 < 5) return 'клиента';
+    if (n10 === 1) return 'клиент';
+    return 'клиентов';
+  }
   window.SNTStore.ready(function () {
     var workers = window.SNTStore.getWorkers();
     var html = workers.map(function (w, i) {
       var accent = ACCENTS[i % ACCENTS.length];
       var phoneClean = (w.phone || '').replace(/[\s\-]/g, '');
       var tgHref = w.telegram || 'https://t.me/' + phoneClean;
+      var clientsLine = w.clients ? '<span class="p-role">' + w.clients + ' ' + pluralClients(w.clients) + '</span>' : '';
       return '<div class="card-person anim" style="--accent:' + accent + ';--d:' + (560 + i * 100) + 'ms">' +
         '<span class="avatar" style="--accent:' + accent + '">' + esc(initName(w.name)) + '</span>' +
         '<span class="p-body">' +
         '<span class="p-name">' + esc(w.name) + '</span>' +
+        clientsLine +
         '<a href="tel:' + esc(phoneClean) + '" class="p-phone"><svg viewBox="0 0 24 24" fill="none"><path d="M6.6 10.8a15 15 0 006.6 6.6l2.2-2.2a1 1 0 011-.24 11.4 11.4 0 003.6.58 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.46.58 3.6a1 1 0 01-.24 1l-2.24 2.2z" fill="currentColor"/></svg> ' + esc(w.phone || '') + '</a>' +
         '<a href="' + esc(tgHref) + '" class="p-tg" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg> Telegram</a>' +
         '</span>' +

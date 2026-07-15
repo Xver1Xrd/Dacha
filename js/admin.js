@@ -11,6 +11,13 @@
   }
   function cssEsc(s) { return String(s).replace(/(["\\])/g, '\\$1'); }
   function initials(n) { return n.trim().charAt(0).toUpperCase(); }
+  function pluralClients(n) {
+    var n100 = Math.abs(n) % 100, n10 = n100 % 10;
+    if (n100 > 10 && n100 < 20) return 'клиентов';
+    if (n10 > 1 && n10 < 5) return 'клиента';
+    if (n10 === 1) return 'клиент';
+    return 'клиентов';
+  }
 
   var toastT;
   function toast(msg) {
@@ -69,10 +76,11 @@
     var html = list.map(function (w) {
       var nb = S.isNewbie(w) ? '<span class="tag-new">Новичок</span>' : '';
       var tg = w.telegram ? (' · <a href="' + esc(w.telegram) + '" target="_blank" rel="noopener" style="color:#229ed9">Telegram</a>') : '';
+      var clients = ' · ' + (w.clients || 0) + ' ' + pluralClients(w.clients || 0);
       return '<div class="list-item">' +
         '<span class="li-ava">' + esc(initials(w.name)) + '</span>' +
         '<span class="li-body"><span class="li-name">' + esc(w.name) + nb + '</span>' +
-        '<span class="li-meta">' + esc(w.phone || '') + tg + '</span></span>' +
+        '<span class="li-meta">' + esc(w.phone || '') + tg + clients + '</span></span>' +
         '<div class="list-actions">' +
         '<button class="btn-edit" data-we="' + w.id + '" type="button">✎</button>' +
         '<button class="btn-del" data-wi="' + w.id + '" type="button">Удалить</button></div>' +
@@ -83,14 +91,15 @@
 
   $('workerForm').addEventListener('submit', function (e) {
     e.preventDefault();
+    var clients = parseInt($('w-clients').value, 10) || 0;
     if (editingWorkerId) {
-      S.editWorker(editingWorkerId, $('w-name').value.trim(), $('w-phone').value.trim(), $('w-tg').value.trim()).then(function () {
+      S.editWorker(editingWorkerId, $('w-name').value.trim(), $('w-phone').value.trim(), $('w-tg').value.trim(), clients).then(function () {
         $('workerForm').reset(); editingWorkerId = null;
         $('workerForm').querySelector('button[type="submit"]').textContent = 'Добавить';
         renderWorkers(); toast('Сохранено');
       });
     } else {
-      S.addWorker($('w-name').value.trim(), $('w-phone').value.trim(), $('w-tg').value.trim()).then(function () {
+      S.addWorker($('w-name').value.trim(), $('w-phone').value.trim(), $('w-tg').value.trim(), clients).then(function () {
         $('workerForm').reset(); renderWorkers(); toast('Работник добавлен');
       });
     }
@@ -113,6 +122,7 @@
       $('w-name').value = w.name;
       $('w-phone').value = w.phone || '';
       $('w-tg').value = w.telegram || '';
+      $('w-clients').value = w.clients || 0;
       editingWorkerId = id;
       $('workerForm').querySelector('button[type="submit"]').textContent = 'Сохранить';
       $('w-name').focus();
