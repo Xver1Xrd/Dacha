@@ -27,9 +27,9 @@ var seedWorks = map[string]WorkRec{
 }
 
 var seedWorkers = []Worker{
-	{ID: 1, Name: "Ярослав", Phone: "+7 967 592 58 71", Telegram: "https://t.me/+79675925871", Clients: 18},
-	{ID: 2, Name: "Роман", Phone: "+7 981 204 11 78", Telegram: "https://t.me/+79812041178", Clients: 16},
-	{ID: 3, Name: "Денис", Phone: "+7 950 029 03 98", Telegram: "https://t.me/+79500290398", Clients: 6},
+	{ID: 1, Name: "Ярослав", Phone: "+7 967 592 58 71", Telegram: "https://t.me/xverlxrd", Clients: 18},
+	{ID: 2, Name: "Роман", Phone: "+7 981 204 11 78", Telegram: "https://t.me/RomanIvonov", Clients: 16},
+	{ID: 3, Name: "Денис", Phone: "+7 950 029 03 98", Telegram: "https://t.me/SEF_TER", Clients: 6},
 }
 
 var seedReviews = []Review{
