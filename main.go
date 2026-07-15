@@ -1,5 +1,5 @@
 // Бэкенд сайта СНТ «Михайловское».
-// Только REST API. Статика раздаётся отдельным frontend-контейнером.
+// Раздаёт статику (index.html, admin.html, css, js) и REST API.
 // Хранилище — PostgreSQL (DATABASE_URL) или data.json (если DATABASE_URL не задан).
 // Авторизация — сессии в HttpOnly-cookie, пароли хешируются PBKDF2-HMAC-SHA256.
 package main
@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+//go:embed index.html admin.html css js
+var staticFS embed.FS
 
 const dataFile = "data.json"
 
@@ -930,6 +934,8 @@ func buildHandler(srv *Server) http.Handler {
 	mux.HandleFunc("DELETE /api/reviews/{id}", srv.requirePerm("reviews", srv.handleReviewsDel))
 	mux.HandleFunc("PUT /api/reviews/{id}", srv.requirePerm("reviews", srv.handleReviewsEdit))
 	mux.HandleFunc("POST /api/reviews/{id}/move", srv.requirePerm("reviews", srv.handleReviewsMove))
+
+	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
 	return securityHeaders(limitBody(srv.csrfMiddleware(mux)))
 }
